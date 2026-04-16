@@ -99,8 +99,9 @@ async function startServer() {
           };
           
           const metaRes = await fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`, { signal: controller.signal, headers });
-          if (!metaRes.ok) throw new Error(`Cinemeta API request failed: ${metaRes.status}`);
-          const metaData = await metaRes.json();
+          const metaText = await metaRes.text();
+          if (metaText.trim().startsWith('<')) throw new Error('Cloudflare blocked Cinemeta API on this Cloud IP.');
+          const metaData = JSON.parse(metaText);
           
           if (metaData && metaData.metas && metaData.metas.length > 0) {
             const meta = metaData.metas[0];
@@ -114,8 +115,9 @@ async function startServer() {
             }
             
             const torRes = await fetch(endpoint, { signal: controller.signal, headers });
-            if (!torRes.ok) throw new Error(`Torrentio API request failed: ${torRes.status}`);
-            const torData = await torRes.json();
+            const torText = await torRes.text();
+            if (torText.trim().startsWith('<')) throw new Error('Cloudflare blocked Torrentio API on this Cloud IP.');
+            const torData = JSON.parse(torText);
             
             if (torData && torData.streams) {
               for (let s of torData.streams) {
