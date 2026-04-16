@@ -92,7 +92,14 @@ async function startServer() {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 8000);
           
-          const metaRes = await fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`, { signal: controller.signal });
+          // Stremio desktop client UA effortlessly bypasses Torrent/Cinemeta Cloudflare checks
+          const headers = { 
+            "User-Agent": "Stremio/4.4.162 (Windows NT 10.0; Win64; x64)",
+            "Accept": "application/json"
+          };
+          
+          const metaRes = await fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`, { signal: controller.signal, headers });
+          if (!metaRes.ok) throw new Error(`Cinemeta API request failed: ${metaRes.status}`);
           const metaData = await metaRes.json();
           
           if (metaData && metaData.metas && metaData.metas.length > 0) {
@@ -106,7 +113,8 @@ async function startServer() {
                endpoint = `https://torrentio.strem.fun/stream/series/${imdbId}:1:1.json`;
             }
             
-            const torRes = await fetch(endpoint, { signal: controller.signal });
+            const torRes = await fetch(endpoint, { signal: controller.signal, headers });
+            if (!torRes.ok) throw new Error(`Torrentio API request failed: ${torRes.status}`);
             const torData = await torRes.json();
             
             if (torData && torData.streams) {
