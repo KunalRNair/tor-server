@@ -510,13 +510,24 @@
     // ---------------------------------------------------------------------------
     async function startDownload(encodedMagnet, name) {
       overlay.classList.add('active');
-      document.querySelector('.loading-text').innerText = "Fetching metadata...";
-      document.querySelector('.loading-subtext').innerText = `Extracting files for: ${name}`;
+      document.querySelector('.loading-text').innerText = "Connecting to swarm...";
+      document.querySelector('.loading-subtext').innerText = "Finding peers and fetching torrent metadata. This can take up to 45 seconds for less-popular titles.";
+
+      // Animated dots to show it's still alive
+      let dotCount = 0;
+      const tick = setInterval(() => {
+        dotCount = (dotCount + 1) % 4;
+        document.querySelector('.loading-text').innerText = "Connecting to swarm" + ".".repeat(dotCount);
+      }, 500);
 
       try {
         const metaRes = await fetch('/api/metadata?magnet=' + encodedMagnet);
         const metaData = await metaRes.json();
+        clearInterval(tick);
 
+        if (!metaRes.ok) {
+          throw new Error(metaData.error || "Could not fetch torrent metadata.");
+        }
         if (!metaData.files || metaData.files.length === 0) {
           throw new Error("Could not parse torrent contents.");
         }
@@ -524,15 +535,16 @@
         const largestFile = metaData.files.reduce((a, b) => a.sizeBytes > b.sizeBytes ? a : b);
 
         document.querySelector('.loading-text').innerText = "Download Starting...";
-        document.querySelector('.loading-subtext').innerText = `Downloading: ${largestFile.name}. Check your browser.`;
+        document.querySelector('.loading-subtext').innerText = `Downloading: ${largestFile.name} (${metaData.peers || 0} peers). Check your browser.`;
 
         window.location.href = `/api/download?magnet=${encodedMagnet}&fileIndex=${largestFile.index}`;
 
         setTimeout(() => overlay.classList.remove('active'), 3000);
       } catch (e) {
+        clearInterval(tick);
         document.querySelector('.loading-text').innerText = "Error Occurred";
-        document.querySelector('.loading-subtext').innerText = e.message;
-        setTimeout(() => overlay.classList.remove('active'), 4000);
+        document.querySelector('.loading-subtext').innerText = e.message + " — try a different torrent with more seeders.";
+        setTimeout(() => overlay.classList.remove('active'), 5000);
       }
     }
 
