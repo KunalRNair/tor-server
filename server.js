@@ -86,9 +86,8 @@ async function startServer() {
         }
       }
 
-      // 2. If ALL yts domains are blocked by the ISP, fallback to ApiBay (The Pirate Bay)
-      if (!success) {
-        console.log("All YTS mirrors blocked. Falling back to ApiBay...");
+      // 2. We also scrape ApiBay (The Pirate Bay) concurrently for ultimate global coverage
+      console.log("Fetching from ApiBay (The Pirate Bay) for extended results...");
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 8000);
@@ -118,7 +117,7 @@ async function startServer() {
         } catch (e) {
           console.error("ApiBay fallback also failed. Network might be heavily restricted.");
         }
-      }
+
 
       return links.slice(0, limit || 20);
     }
