@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+
+# Ignore downloaded movies/torrents
+*.mp4
+*.mkv
+*.avi
+*.torrent
+
+# Ignore folders that look like downloaded movies (which are usually capitalized spaces)
+/Taken*/
+*1080p*
+*720p*
+*4K*

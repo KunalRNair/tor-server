@@ -1,0 +1,14 @@
+{
+  "name": "turent",
+  "version": "1.0.0",
+  "description": "Premium torrent downloader and streamer",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "torrent-agent": "^0.3.0",
+    "webtorrent": "^2.1.33"
+  }
+}
