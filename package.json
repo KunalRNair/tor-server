@@ -8,7 +8,6 @@
   },
   "dependencies": {
     "express": "^4.19.2",
-    "torrent-agent": "^0.3.0",
     "webtorrent": "^2.1.33"
   }
 }

@@ -369,29 +369,110 @@
     const resultsContainer = document.getElementById('resultsContainer');
     const resultsList = document.getElementById('resultsList');
 
+    const BEST_TRACKERS = [
+      'udp://tracker.opentrackr.org:1337/announce',
+      'udp://tracker.openbittorrent.com:6969/announce',
+      'udp://tracker.torrent.eu.org:451/announce',
+      'udp://tracker.moeking.me:6969/announce',
+      'udp://tracker.zer0day.to:1337/announce',
+      'udp://tracker.leechers-paradise.org:6969/announce',
+      'udp://coppersurfer.tk:6969/announce',
+      'udp://tracker.internetwarriors.net:1337/announce',
+      'wss://tracker.btorrent.xyz',
+      'wss://tracker.openwebtorrent.com',
+      'wss://tracker.fastcast.nz'
+    ];
+    const trString = BEST_TRACKERS.map(tr => '&tr=' + encodeURIComponent(tr)).join('');
+
+    // ---------------------------------------------------------------------------
+    // CLIENT-SIDE SEARCH: Runs directly from your phone's browser.
+    // Your residential IP (Jio/Airtel) is never blocked by Cloudflare.
+    // The Render server is NOT involved in search at all.
+    // ---------------------------------------------------------------------------
     async function executeSearch() {
       const query = input.value.trim();
-      if(!query) return;
+      if (!query) return;
 
       overlay.classList.add('active');
       document.querySelector('.loading-text').innerText = "Searching swarm...";
-      document.querySelector('.loading-subtext').innerText = "Finding the highest quality seeders. Please hold on.";
+      document.querySelector('.loading-subtext').innerText = "Your phone is searching directly. No cloud middleman!";
       resultsContainer.style.display = 'none';
 
       try {
-        const isSortLatest = document.getElementById('sortLatest').checked;
-        const searchRes = await fetch(`/api/search?movie=${encodeURIComponent(query)}&latest=${isSortLatest}`);
-        const searchData = await searchRes.json();
-        
-        if (!searchData.results || searchData.results.length === 0) {
-           throw new Error("No results found for this movie.");
+        let results = [];
+
+        // Step 1: Search Cinemeta for IMDb ID (runs from phone browser — Cloudflare allows residential IPs)
+        const metaRes = await fetch(
+          `https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`
+        );
+        const metaText = await metaRes.text();
+        if (metaText.trim().startsWith('<')) throw new Error('Cinemeta returned HTML — possible block. Try again.');
+        const metaData = JSON.parse(metaText);
+
+        if (!metaData || !metaData.metas || metaData.metas.length === 0) {
+          throw new Error("No results found for this movie.");
         }
 
+        const meta = metaData.metas[0];
+        const imdbId = meta.imdb_id;
+
+        // Step 2: Query Torrentio with IMDb ID (also runs from phone browser)
+        let endpoint = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
+        if (meta.type === 'series') {
+          endpoint = `https://torrentio.strem.fun/stream/series/${imdbId}:1:1.json`;
+        }
+
+        const torRes = await fetch(endpoint);
+        const torText = await torRes.text();
+        if (torText.trim().startsWith('<')) throw new Error('Torrentio returned HTML — possible block. Try again.');
+        const torData = JSON.parse(torText);
+
+        if (torData && torData.streams) {
+          for (const s of torData.streams) {
+            if (!s.infoHash) continue;
+
+            let seeders = 0;
+            let size = "Unknown";
+            if (s.title) {
+              const seedMatch = s.title.match(/👤\s*(\d+)/);
+              if (seedMatch) seeders = parseInt(seedMatch[1], 10);
+              const sizeMatch = s.title.match(/💾\s*([^⚙️\n]+)/);
+              if (sizeMatch) size = sizeMatch[1].trim();
+            }
+
+            const cleanName = (s.title || query).split('\n')[0];
+            const trackerName = (s.name || 'Torrent').split('\n')[0];
+            const magnet = `magnet:?xt=urn:btih:${s.infoHash}&dn=${encodeURIComponent(cleanName)}${trString}`;
+
+            results.push({
+              name: `(${trackerName}) ${cleanName}`,
+              size: size,
+              seeders: seeders,
+              magnet: magnet
+            });
+          }
+        }
+
+        if (results.length === 0) {
+          throw new Error("No torrent results found for this title.");
+        }
+
+        // Sort by latest release year if checkbox is checked
+        const isSortLatest = document.getElementById('sortLatest').checked;
+        if (isSortLatest) {
+          results.sort((a, b) => {
+            const yearA = parseInt(a.name.match(/\((\d{4})\)/)?.[1] || 0, 10);
+            const yearB = parseInt(b.name.match(/\((\d{4})\)/)?.[1] || 0, 10);
+            return yearB - yearA;
+          });
+        }
+
+        // Render results
         overlay.classList.remove('active');
         resultsContainer.style.display = 'block';
         resultsList.innerHTML = '';
-        
-        searchData.results.forEach(res => {
+
+        results.slice(0, 20).forEach(res => {
           const item = document.createElement('div');
           item.className = 'result-item';
           item.innerHTML = `
@@ -411,6 +492,10 @@
       }
     }
 
+    // ---------------------------------------------------------------------------
+    // DOWNLOAD: This still goes through the Render server's WebTorrent engine.
+    // WebTorrent uses P2P — ISPs/Cloudflare can't block it.
+    // ---------------------------------------------------------------------------
     async function startDownload(encodedMagnet, name) {
       overlay.classList.add('active');
       document.querySelector('.loading-text').innerText = "Fetching metadata...";
@@ -419,9 +504,9 @@
       try {
         const metaRes = await fetch('/api/metadata?magnet=' + encodedMagnet);
         const metaData = await metaRes.json();
-        
+
         if (!metaData.files || metaData.files.length === 0) {
-           throw new Error("Could not parse torrent contents.");
+          throw new Error("Could not parse torrent contents.");
         }
 
         const largestFile = metaData.files.reduce((a, b) => a.sizeBytes > b.sizeBytes ? a : b);
@@ -429,9 +514,8 @@
         document.querySelector('.loading-text').innerText = "Download Starting...";
         document.querySelector('.loading-subtext').innerText = `Downloading: ${largestFile.name}. Check your browser.`;
 
-        // Use window.location instead of an invisible iframe to properly trigger native iOS downloads
         window.location.href = `/api/download?magnet=${encodedMagnet}&fileIndex=${largestFile.index}`;
-        
+
         setTimeout(() => overlay.classList.remove('active'), 3000);
       } catch (e) {
         document.querySelector('.loading-text').innerText = "Error Occurred";
@@ -442,7 +526,7 @@
 
     btn.addEventListener('click', executeSearch);
     input.addEventListener('keypress', (e) => {
-      if(e.key === 'Enter') executeSearch();
+      if (e.key === 'Enter') executeSearch();
     });
   </script>
 </body>
