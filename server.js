@@ -86,40 +86,63 @@ async function startServer() {
         }
       }
 
-      // 2. We also scrape ApiBay (The Pirate Bay) concurrently for ultimate global coverage
-      console.log("Fetching from ApiBay (The Pirate Bay) for extended results...");
-        try {
+      // 2. We also scrape Torrentio (1337x, TorrentGalaxy, TPB) concurrently for ultimate global coverage
+      console.log("Fetching from Torrentio (Aggregator) for extended results...");
+      try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 8000);
           
-          const response = await fetch(`https://apibay.org/q.php?q=${encodeURIComponent(query)}`, {
-            signal: controller.signal
-          });
-          clearTimeout(timeoutId);
+          const metaRes = await fetch(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`, { signal: controller.signal });
+          const metaData = await metaRes.json();
+          
+          if (metaData && metaData.metas && metaData.metas.length > 0) {
+            const meta = metaData.metas[0];
+            const imdbId = meta.imdb_id;
+            
+            // Query Torrentio with IMDb ID
+            let endpoint = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
+            if (meta.type === 'series') {
+               // Default to season 1 episode 1 for TV shows
+               endpoint = `https://torrentio.strem.fun/stream/series/${imdbId}:1:1.json`;
+            }
+            
+            const torRes = await fetch(endpoint, { signal: controller.signal });
+            const torData = await torRes.json();
+            
+            if (torData && torData.streams) {
+              for (let s of torData.streams) {
+                if (s.infoHash) {
+                  let seeders = 0;
+                  let size = "Unknown";
+                  if (s.title) {
+                    const seedMatch = s.title.match(/👤\s*(\d+)/);
+                    if (seedMatch) seeders = parseInt(seedMatch[1], 10);
+                    const sizeMatch = s.title.match(/💾\s*([^⚙️\n]+)/);
+                    if (sizeMatch) size = sizeMatch[1].trim();
+                  }
 
-          const data = await response.json();
-          // apibay returns a fake id "0" if nothing is found
-          if (Array.isArray(data) && data.length > 0 && data[0].id !== "0") {
-            for (let t of data) {
-              links.push({
-                name: t.name,
-                provider: "ApiBay",
-                url: "https://thepiratebay.org/description.php?id=" + t.id,
-                seeders: parseInt(t.seeders) || 0,
-                leechers: parseInt(t.leechers) || 0,
-                size: t.size || '0',
-                infoHash: t.info_hash,
-                magnetURI: `magnet:?xt=urn:btih:${t.info_hash}&dn=${encodeURIComponent(t.name)}${trString}`
-              });
+                  let cleanName = (s.title || query).split('\n')[0];
+                  let trackerName = (s.name || 'Torrent').split('\n')[0];
+
+                  links.push({
+                    name: `(${trackerName}) ${cleanName}`,
+                    provider: trackerName,
+                    url: "#",
+                    seeders: seeders,
+                    leechers: 0,
+                    size: size,
+                    infoHash: s.infoHash,
+                    magnetURI: `magnet:?xt=urn:btih:${s.infoHash}&dn=${encodeURIComponent(cleanName)}${trString}`
+                  });
+                }
+              }
             }
           }
-          console.log(`Success! Reached data via ApiBay`);
-        } catch (e) {
-          console.error("ApiBay fallback also failed. Network might be heavily restricted.");
-        }
-
-
-      return links.slice(0, limit || 20);
+          clearTimeout(timeoutId);
+          console.log(`Success! Reached data via Torrentio`);
+      } catch (e) {
+          console.error("Torrentio fallback also failed:", e.message);
+      }      return links.slice(0, limit || 20);
     }
 
     async scrapeTorrent(link) {
