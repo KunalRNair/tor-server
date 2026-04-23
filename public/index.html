@@ -463,28 +463,39 @@
     const resultsContainer = document.getElementById('resultsContainer');
     const resultsList = document.getElementById('resultsList');
 
-    // ── Real-Debrid Settings ──
+    // ── Real-Debrid Settings (token stored server-side) ──
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsPanel = document.getElementById('settingsPanel');
     const rdTokenInput = document.getElementById('rdTokenInput');
     const rdSaveBtn = document.getElementById('rdSaveBtn');
     const rdStatus = document.getElementById('rdStatus');
 
-    function getRdToken() { return localStorage.getItem('rd_token') || ''; }
-    function hasRD() { return getRdToken().length > 10; }
+    let rdConnected = false;
 
-    function updateRdUI() {
-      if (hasRD()) {
-        settingsToggle.classList.add('active-rd');
-        rdStatus.textContent = 'Connected — downloads will use Real-Debrid';
-        rdStatus.className = 'rd-status connected';
-        rdTokenInput.value = getRdToken().slice(0, 8) + '...';
-      } else {
+    async function checkRdStatus() {
+      try {
+        const res = await fetch('/api/rd-token/status');
+        const data = await res.json();
+        rdConnected = data.connected;
+        if (data.connected) {
+          settingsToggle.classList.add('active-rd');
+          rdStatus.textContent = `Connected as ${data.username} (${data.type})`;
+          rdStatus.className = 'rd-status connected';
+          rdTokenInput.value = '••••••••';
+        } else {
+          settingsToggle.classList.remove('active-rd');
+          rdStatus.textContent = '';
+          rdTokenInput.value = '';
+        }
+      } catch {
+        rdConnected = false;
         settingsToggle.classList.remove('active-rd');
         rdStatus.textContent = '';
         rdTokenInput.value = '';
       }
     }
+
+    function hasRD() { return rdConnected; }
 
     settingsToggle.addEventListener('click', () => {
       settingsPanel.classList.toggle('open');
@@ -492,30 +503,30 @@
 
     rdSaveBtn.addEventListener('click', async () => {
       const token = rdTokenInput.value.trim();
-      if (!token || token.includes('...')) {
+      if (!token || token === '••••••••') {
         // Clear token
-        localStorage.removeItem('rd_token');
-        updateRdUI();
+        await fetch('/api/rd-token', { method: 'DELETE' });
+        rdConnected = false;
+        settingsToggle.classList.remove('active-rd');
         rdStatus.textContent = 'Token removed.';
         rdStatus.className = 'rd-status';
+        rdTokenInput.value = '';
         return;
       }
-      // Verify token with RD API
+      // Save token server-side (server verifies on status check)
       rdStatus.textContent = 'Verifying...';
       rdStatus.className = 'rd-status';
       try {
-        const res = await fetch('/api/rd/user', {
-          headers: { 'Authorization': 'Bearer ' + token }
+        await fetch('/api/rd-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token })
         });
-        const data = await res.json();
-        if (data.username) {
-          localStorage.setItem('rd_token', token);
-          updateRdUI();
-          rdStatus.textContent = `Connected as ${data.username} (${data.type})`;
-          rdStatus.className = 'rd-status connected';
-        } else {
+        await checkRdStatus();
+        if (!rdConnected) {
           rdStatus.textContent = 'Invalid token. Get it from real-debrid.com/apitoken';
           rdStatus.className = 'rd-status';
+          await fetch('/api/rd-token', { method: 'DELETE' });
         }
       } catch {
         rdStatus.textContent = 'Could not verify. Check your connection.';
@@ -523,15 +534,15 @@
       }
     });
 
-    // Initialize RD UI on load
-    updateRdUI();
+    // Clean up old client-side token if any
+    localStorage.removeItem('rd_token');
 
-    // ── Helper: call RD API via our proxy ──
+    // Initialize RD UI on load
+    checkRdStatus();
+
+    // ── Helper: call RD API via our proxy (no auth needed, server has token) ──
     async function rdAPI(method, rdPath, body) {
-      const opts = {
-        method,
-        headers: { 'Authorization': 'Bearer ' + getRdToken() },
-      };
+      const opts = { method, headers: {} };
       if (body) {
         opts.headers['Content-Type'] = 'application/json';
         opts.body = JSON.stringify(body);

@@ -1,6 +1,22 @@
 const path = require('path');
+const fs = require('fs');
 const os = require('os');
 const express = require('express');
+
+// ── Server-side RD token storage ──
+const RD_TOKEN_FILE = path.join(__dirname, '.rd_token');
+
+function getRdToken() {
+  try { return fs.readFileSync(RD_TOKEN_FILE, 'utf8').trim(); } catch { return ''; }
+}
+
+function setRdToken(token) {
+  fs.writeFileSync(RD_TOKEN_FILE, token, 'utf8');
+}
+
+function clearRdToken() {
+  try { fs.unlinkSync(RD_TOKEN_FILE); } catch {}
+}
 
 async function startServer() {
   const { default: WebTorrent } = await import('webtorrent');
@@ -68,24 +84,56 @@ async function startServer() {
   app.use(express.json());
 
   // ======================================================================
-  // Real-Debrid API Proxy
-  // Client sends RD API token in Authorization header.
-  // We forward to api.real-debrid.com, converting JSON body to form-data.
-  // This avoids CORS issues (RD API doesn't allow browser-origin requests).
+  // Real-Debrid Token Management (server-side storage)
   // ======================================================================
-  app.all('/api/rd/*', async (req, res) => {
-    const rdPath = req.params[0];
+  app.post('/api/rd-token', (req, res) => {
+    const { token } = req.body;
+    if (!token || typeof token !== 'string' || token.length < 10) {
+      return res.status(400).json({ error: 'Invalid token' });
+    }
+    setRdToken(token);
+    res.json({ ok: true });
+  });
+
+  app.delete('/api/rd-token', (_req, res) => {
+    clearRdToken();
+    res.json({ ok: true });
+  });
+
+  app.get('/api/rd-token/status', async (_req, res) => {
+    const token = getRdToken();
+    if (!token) return res.json({ connected: false });
+    try {
+      const rdRes = await fetch('https://api.real-debrid.com/rest/1.0/user', {
+        headers: { 'Authorization': 'Bearer ' + token }
+      });
+      const data = await rdRes.json();
+      if (data.username) {
+        res.json({ connected: true, username: data.username, type: data.type });
+      } else {
+        res.json({ connected: false });
+      }
+    } catch {
+      res.json({ connected: false });
+    }
+  });
+
+  // ======================================================================
+  // Real-Debrid API Proxy (token is server-side, no client auth needed)
+  // ======================================================================
+  app.all('/api/rd/{*rdPath}', async (req, res) => {
+    const rdPath = req.params.rdPath;
     if (!rdPath) return res.status(400).json({ error: 'Missing RD API path' });
 
+    const token = getRdToken();
+    if (!token) return res.status(401).json({ error: 'No RD token configured' });
+
     const rdUrl = `https://api.real-debrid.com/rest/1.0/${rdPath}`;
-    const fetchOpts = { method: req.method, headers: {} };
+    const fetchOpts = {
+      method: req.method,
+      headers: { 'Authorization': 'Bearer ' + token }
+    };
 
-    // Forward the Bearer token
-    if (req.headers.authorization) {
-      fetchOpts.headers['Authorization'] = req.headers.authorization;
-    }
-
-    // Convert JSON body to x-www-form-urlencoded (RD API expects form data)
     if (req.method === 'POST' && req.body && Object.keys(req.body).length > 0) {
       fetchOpts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
       fetchOpts.body = new URLSearchParams(req.body).toString();
