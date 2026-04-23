@@ -2,13 +2,9 @@ const path = require('path');
 const os = require('os');
 const express = require('express');
 
-// WebTorrent only supports ES Modules, so we must import it dynamically
 async function startServer() {
   const { default: WebTorrent } = await import('webtorrent');
 
-  // Render limits us to ~75 open ports. DHT opens a new UDP socket per torrent
-  // and eats the budget fast. We disable DHT because the client already bakes
-  // 11 trackers into every magnet URL, so peer discovery still works fine.
   const client = new WebTorrent({
     dht: false,
     maxConns: 30,
@@ -16,13 +12,9 @@ async function startServer() {
   });
   client.on('error', err => console.error('WebTorrent client error:', err.message || err));
 
-  // Cap concurrent torrents so we don't leak ports/disk over time.
   const MAX_TORRENTS = 3;
   const METADATA_TIMEOUT_MS = 45_000;
 
-  // Some browsers (and re-clicks) call /api/metadata then /api/download for
-  // the same magnet. WebTorrent throws if the same magnet is added twice, so
-  // we always look up by infoHash first.
   function extractInfoHash(magnet) {
     const m = magnet.match(/xt=urn:btih:([a-fA-F0-9]{40}|[A-Za-z2-7]{32})/);
     return m ? m[1].toLowerCase() : null;
@@ -42,8 +34,6 @@ async function startServer() {
     }
   }
 
-  // Returns a promise that resolves with a torrent that has metadata loaded.
-  // Rejects with a helpful error if it takes too long (dead swarm).
   function getTorrentReady(magnet) {
     return new Promise((resolve, reject) => {
       const existing = findExistingTorrent(magnet);
@@ -57,20 +47,15 @@ async function startServer() {
         t.once('error', (err) => { clearTimeout(timer); reject(err); });
       };
 
-      if (existing) {
-        waitForMeta(existing);
-        return;
-      }
-
+      if (existing) { waitForMeta(existing); return; }
       evictOldestIfNeeded();
 
       try {
         const added = client.add(magnet, { path: os.tmpdir() }, (t) => {
-          t.files.forEach(f => f.deselect()); // don't auto-download everything
+          t.files.forEach(f => f.deselect());
         });
         waitForMeta(added);
       } catch (err) {
-        // Race: another request added it between our check and add().
         const raced = findExistingTorrent(magnet);
         if (raced) waitForMeta(raced);
         else reject(err);
@@ -80,23 +65,59 @@ async function startServer() {
 
   const app = express();
   app.use(express.static(path.join(__dirname, 'public')));
+  app.use(express.json());
 
-  // ----------------------------------------------------------------------
-  // 1. Fetch the metadata to see internal files
-  // ----------------------------------------------------------------------
+  // ======================================================================
+  // Real-Debrid API Proxy
+  // Client sends RD API token in Authorization header.
+  // We forward to api.real-debrid.com, converting JSON body to form-data.
+  // This avoids CORS issues (RD API doesn't allow browser-origin requests).
+  // ======================================================================
+  app.all('/api/rd/*', async (req, res) => {
+    const rdPath = req.params[0];
+    if (!rdPath) return res.status(400).json({ error: 'Missing RD API path' });
+
+    const rdUrl = `https://api.real-debrid.com/rest/1.0/${rdPath}`;
+    const fetchOpts = { method: req.method, headers: {} };
+
+    // Forward the Bearer token
+    if (req.headers.authorization) {
+      fetchOpts.headers['Authorization'] = req.headers.authorization;
+    }
+
+    // Convert JSON body to x-www-form-urlencoded (RD API expects form data)
+    if (req.method === 'POST' && req.body && Object.keys(req.body).length > 0) {
+      fetchOpts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      fetchOpts.body = new URLSearchParams(req.body).toString();
+    }
+
+    try {
+      const rdRes = await fetch(rdUrl, fetchOpts);
+      const contentType = rdRes.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        const data = await rdRes.json();
+        res.status(rdRes.status).json(data);
+      } else {
+        const text = await rdRes.text();
+        res.status(rdRes.status).send(text);
+      }
+    } catch (e) {
+      console.error('RD proxy error:', e.message);
+      res.status(502).json({ error: 'Real-Debrid API error: ' + e.message });
+    }
+  });
+
+  // ======================================================================
+  // WebTorrent fallback endpoints (used when RD token is not set)
+  // ======================================================================
   app.get('/api/metadata', async (req, res) => {
     const magnet = req.query.magnet;
     if (!magnet) return res.status(400).json({ error: 'Missing magnet link' });
-
     console.log('Fetching metadata for magnet...');
-
     try {
       const torrent = await getTorrentReady(magnet);
-      const files = torrent.files.map((f, index) => ({
-        name: f.name,
-        sizeBytes: f.length,
-        index,
-      }));
+      const files = torrent.files.map((f, index) => ({ name: f.name, sizeBytes: f.length, index }));
       console.log(`Metadata OK: ${files.length} files, peers=${torrent.numPeers}`);
       res.json({ files, peers: torrent.numPeers });
     } catch (e) {
@@ -105,41 +126,26 @@ async function startServer() {
     }
   });
 
-  // ----------------------------------------------------------------------
-  // 2. Initiate the raw download stream for a specific file index
-  // ----------------------------------------------------------------------
   app.get('/api/download', async (req, res) => {
     const magnet = req.query.magnet;
     const fileIndex = parseInt(req.query.fileIndex, 10);
-
     if (!magnet || isNaN(fileIndex)) return res.status(400).send('Invalid request');
     console.log(`Download requested: index ${fileIndex}`);
-
     try {
       const torrent = await getTorrentReady(magnet);
       const file = torrent.files[fileIndex];
       if (!file) return res.status(404).send('File not found inside torrent');
-
-      file.select(); // prioritize pieces for this file
-
-      // Safe filename for Content-Disposition header
+      file.select();
       const safeName = file.name.replace(/[^\w\s.-]/g, '_');
       res.setHeader('Content-Length', file.length);
       res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
       res.setHeader('Content-Type', 'application/octet-stream');
-
       const stream = file.createReadStream();
       stream.pipe(res);
-
-      const cleanup = () => {
-        if (!stream.destroyed) stream.destroy();
-      };
+      const cleanup = () => { if (!stream.destroyed) stream.destroy(); };
       req.on('close', cleanup);
       res.on('close', cleanup);
-
       stream.on('error', (err) => {
-        // "Writable stream closed prematurely" just means the client
-        // disconnected (closed tab, lost network). Not a real error.
         if (!/closed prematurely|premature close/i.test(err.message || '')) {
           console.error('Stream error:', err.message);
         }
@@ -152,10 +158,7 @@ async function startServer() {
 
   app.listen(3000, () => {
     console.log('Server listening on port 3000');
-    console.log('Visit http://localhost:3000 in your browser to start downloading.');
   });
 }
 
-startServer().catch(err => {
-  console.error('Failed to start server:', err);
-});
+startServer().catch(err => console.error('Failed to start server:', err));

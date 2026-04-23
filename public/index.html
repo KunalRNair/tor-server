@@ -297,6 +297,76 @@
       accent-color: var(--accent);
     }
 
+    /* ── Settings Panel ── */
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .settings-btn {
+      background: none;
+      border: none;
+      padding: 6px;
+      font-size: 1.4rem;
+      cursor: pointer;
+      opacity: 0.5;
+      transition: opacity 0.2s;
+      -webkit-text-fill-color: initial;
+      color: #fff;
+    }
+    .settings-btn:hover, .settings-btn:active { opacity: 1; background: none; box-shadow: none; }
+    .settings-btn.active-rd { opacity: 1; color: #4ade80; }
+
+    .settings-panel {
+      display: none;
+      margin-top: 12px;
+      padding: 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      text-align: left;
+    }
+    .settings-panel.open { display: block; }
+    .settings-panel label {
+      font-size: 0.82rem;
+      color: var(--text-secondary);
+      display: block;
+      margin-bottom: 6px;
+    }
+    .settings-panel .rd-input-row {
+      display: flex;
+      gap: 8px;
+    }
+    .settings-panel input[type="text"] {
+      flex: 1;
+      font-size: 14px;
+      padding: 10px 12px;
+      border-radius: 10px;
+    }
+    .settings-panel .save-btn {
+      padding: 10px 16px;
+      font-size: 0.85rem;
+      border-radius: 10px;
+    }
+    .rd-status {
+      margin-top: 8px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    .rd-status.connected { color: #4ade80; }
+
+    .rd-badge {
+      display: inline-block;
+      background: #166534;
+      color: #4ade80;
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
     /* ── Loading Overlay ── */
     .overlay {
       position: fixed;
@@ -349,7 +419,10 @@
   <div class="blob blob-2"></div>
 
   <div class="container">
-    <h1>Turent</h1>
+    <div class="header-row">
+      <h1>Turent</h1>
+      <button class="settings-btn" id="settingsToggle" title="Settings">&#9881;</button>
+    </div>
     <p>Search & Download</p>
 
     <div class="search-group">
@@ -360,6 +433,15 @@
       <label>
         <input type="checkbox" id="sortLatest"> Sort by Latest Release
       </label>
+    </div>
+
+    <div class="settings-panel" id="settingsPanel">
+      <label>Real-Debrid API Token</label>
+      <div class="rd-input-row">
+        <input type="text" id="rdTokenInput" placeholder="Paste your RD API token..." autocomplete="off">
+        <button class="save-btn" id="rdSaveBtn">Save</button>
+      </div>
+      <div class="rd-status" id="rdStatus"></div>
     </div>
   </div>
 
@@ -380,6 +462,88 @@
     const overlay = document.getElementById('loadingOverlay');
     const resultsContainer = document.getElementById('resultsContainer');
     const resultsList = document.getElementById('resultsList');
+
+    // ── Real-Debrid Settings ──
+    const settingsToggle = document.getElementById('settingsToggle');
+    const settingsPanel = document.getElementById('settingsPanel');
+    const rdTokenInput = document.getElementById('rdTokenInput');
+    const rdSaveBtn = document.getElementById('rdSaveBtn');
+    const rdStatus = document.getElementById('rdStatus');
+
+    function getRdToken() { return localStorage.getItem('rd_token') || ''; }
+    function hasRD() { return getRdToken().length > 10; }
+
+    function updateRdUI() {
+      if (hasRD()) {
+        settingsToggle.classList.add('active-rd');
+        rdStatus.textContent = 'Connected — downloads will use Real-Debrid';
+        rdStatus.className = 'rd-status connected';
+        rdTokenInput.value = getRdToken().slice(0, 8) + '...';
+      } else {
+        settingsToggle.classList.remove('active-rd');
+        rdStatus.textContent = '';
+        rdTokenInput.value = '';
+      }
+    }
+
+    settingsToggle.addEventListener('click', () => {
+      settingsPanel.classList.toggle('open');
+    });
+
+    rdSaveBtn.addEventListener('click', async () => {
+      const token = rdTokenInput.value.trim();
+      if (!token || token.includes('...')) {
+        // Clear token
+        localStorage.removeItem('rd_token');
+        updateRdUI();
+        rdStatus.textContent = 'Token removed.';
+        rdStatus.className = 'rd-status';
+        return;
+      }
+      // Verify token with RD API
+      rdStatus.textContent = 'Verifying...';
+      rdStatus.className = 'rd-status';
+      try {
+        const res = await fetch('/api/rd/user', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        const data = await res.json();
+        if (data.username) {
+          localStorage.setItem('rd_token', token);
+          updateRdUI();
+          rdStatus.textContent = `Connected as ${data.username} (${data.type})`;
+          rdStatus.className = 'rd-status connected';
+        } else {
+          rdStatus.textContent = 'Invalid token. Get it from real-debrid.com/apitoken';
+          rdStatus.className = 'rd-status';
+        }
+      } catch {
+        rdStatus.textContent = 'Could not verify. Check your connection.';
+        rdStatus.className = 'rd-status';
+      }
+    });
+
+    // Initialize RD UI on load
+    updateRdUI();
+
+    // ── Helper: call RD API via our proxy ──
+    async function rdAPI(method, rdPath, body) {
+      const opts = {
+        method,
+        headers: { 'Authorization': 'Bearer ' + getRdToken() },
+      };
+      if (body) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+      }
+      const res = await fetch('/api/rd/' + rdPath, opts);
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `RD API error (${res.status})`);
+      }
+      const text = await res.text();
+      return text ? JSON.parse(text) : {};
+    }
 
     const BEST_TRACKERS = [
       'udp://tracker.opentrackr.org:1337/announce',
@@ -566,16 +730,18 @@
         const countText = results.length >= 30 ? '30+' : results.length;
         document.querySelector('#resultsContainer h2').innerText = `${countText} Results`;
 
+        const rdActive = hasRD();
         results.slice(0, 30).forEach(res => {
           const item = document.createElement('div');
           item.className = 'result-item';
+          const btnLabel = rdActive ? 'Download<span class="rd-badge">RD</span>' : 'Download';
           item.innerHTML = `
             <div class="result-title">${res.name}</div>
             <div class="result-meta">
               <span>Size: ${res.size}</span>
               <span>Seeders: ${res.seeders}</span>
             </div>
-            <button class="download-btn" onclick="startDownload('${encodeURIComponent(res.magnet)}', '${res.name.replace(/'/g, "\\'")}')">Download</button>
+            <button class="download-btn" onclick="startDownload('${encodeURIComponent(res.magnet)}', '${res.name.replace(/'/g, "\\'")}')">` + btnLabel + `</button>
           `;
           resultsList.appendChild(item);
         });
@@ -587,15 +753,102 @@
     }
 
     // ---------------------------------------------------------------------------
-    // DOWNLOAD: This still goes through the Render server's WebTorrent engine.
-    // WebTorrent uses P2P — ISPs/Cloudflare can't block it.
+    // DOWNLOAD via Real-Debrid (if token set) or WebTorrent fallback
     // ---------------------------------------------------------------------------
     async function startDownload(encodedMagnet, name) {
+      const magnetUri = decodeURIComponent(encodedMagnet);
+
+      if (hasRD()) {
+        await downloadWithRD(magnetUri, name);
+      } else {
+        await downloadWithWebTorrent(encodedMagnet, name);
+      }
+    }
+
+    // ── Real-Debrid download flow ──
+    // 1. Add magnet to RD → 2. Select files → 3. Wait for cache/download → 4. Get direct link
+    async function downloadWithRD(magnetUri, name) {
+      overlay.classList.add('active');
+      document.querySelector('.loading-text').innerText = "Sending to Real-Debrid...";
+      document.querySelector('.loading-subtext').innerText = "Checking if torrent is cached on RD servers...";
+
+      try {
+        // 1. Add magnet
+        const addRes = await rdAPI('POST', 'torrents/addMagnet', { magnet: magnetUri });
+        const torrentId = addRes.id;
+        if (!torrentId) throw new Error('Real-Debrid did not return a torrent ID.');
+
+        // 2. Get file list
+        let info = await rdAPI('GET', `torrents/info/${torrentId}`);
+
+        // 3. Select the largest file
+        if (info.files && info.files.length > 0) {
+          const largest = info.files.reduce((a, b) => a.bytes > b.bytes ? a : b);
+          await rdAPI('POST', `torrents/selectFiles/${torrentId}`, { files: String(largest.id) });
+        } else {
+          // Select all if no file list yet
+          await rdAPI('POST', `torrents/selectFiles/${torrentId}`, { files: 'all' });
+        }
+
+        // 4. Poll until status = "downloaded"
+        document.querySelector('.loading-text').innerText = "Real-Debrid processing...";
+        let status = '';
+        let progress = 0;
+        for (let i = 0; i < 60; i++) { // max 2 min polling
+          info = await rdAPI('GET', `torrents/info/${torrentId}`);
+          status = info.status;
+          progress = info.progress || 0;
+
+          if (status === 'downloaded') break;
+          if (status === 'error' || status === 'dead' || status === 'virus' || status === 'magnet_error') {
+            throw new Error(`Real-Debrid error: ${status}. Try another torrent.`);
+          }
+
+          document.querySelector('.loading-subtext').innerText =
+            status === 'magnet_conversion' ? 'Converting magnet...' :
+            status === 'waiting_files_selection' ? 'Selecting files...' :
+            status === 'downloading' ? `Downloading on RD: ${progress}%` :
+            `Status: ${status} (${progress}%)`;
+
+          await new Promise(r => setTimeout(r, 2000));
+        }
+
+        if (status !== 'downloaded') {
+          throw new Error('Real-Debrid is still downloading. Try again in a minute.');
+        }
+
+        // 5. Get the download link(s) and unrestrict
+        if (!info.links || info.links.length === 0) {
+          throw new Error('No download links returned by Real-Debrid.');
+        }
+
+        document.querySelector('.loading-text').innerText = "Generating download link...";
+        const unrestricted = await rdAPI('POST', 'unrestrict/link', { link: info.links[0] });
+
+        if (!unrestricted.download) {
+          throw new Error('Could not unrestrict download link.');
+        }
+
+        // 6. Redirect to direct CDN download
+        document.querySelector('.loading-text').innerText = "Download starting!";
+        document.querySelector('.loading-subtext').innerText = unrestricted.filename || name;
+
+        window.location.href = unrestricted.download;
+        setTimeout(() => overlay.classList.remove('active'), 3000);
+
+      } catch (e) {
+        document.querySelector('.loading-text').innerText = "RD Error";
+        document.querySelector('.loading-subtext').innerText = e.message;
+        setTimeout(() => overlay.classList.remove('active'), 5000);
+      }
+    }
+
+    // ── WebTorrent fallback (no RD token) ──
+    async function downloadWithWebTorrent(encodedMagnet, name) {
       overlay.classList.add('active');
       document.querySelector('.loading-text').innerText = "Connecting to swarm...";
-      document.querySelector('.loading-subtext').innerText = "Finding peers and fetching torrent metadata. This can take up to 45 seconds for less-popular titles.";
+      document.querySelector('.loading-subtext').innerText = "Finding peers (up to 45s for less-popular titles).";
 
-      // Animated dots to show it's still alive
       let dotCount = 0;
       const tick = setInterval(() => {
         dotCount = (dotCount + 1) % 4;
@@ -607,25 +860,20 @@
         const metaData = await metaRes.json();
         clearInterval(tick);
 
-        if (!metaRes.ok) {
-          throw new Error(metaData.error || "Could not fetch torrent metadata.");
-        }
-        if (!metaData.files || metaData.files.length === 0) {
-          throw new Error("Could not parse torrent contents.");
-        }
+        if (!metaRes.ok) throw new Error(metaData.error || "Could not fetch torrent metadata.");
+        if (!metaData.files || metaData.files.length === 0) throw new Error("Could not parse torrent contents.");
 
         const largestFile = metaData.files.reduce((a, b) => a.sizeBytes > b.sizeBytes ? a : b);
 
         document.querySelector('.loading-text').innerText = "Download Starting...";
-        document.querySelector('.loading-subtext').innerText = `Downloading: ${largestFile.name} (${metaData.peers || 0} peers). Check your browser.`;
+        document.querySelector('.loading-subtext').innerText = `${largestFile.name} (${metaData.peers || 0} peers)`;
 
         window.location.href = `/api/download?magnet=${encodedMagnet}&fileIndex=${largestFile.index}`;
-
         setTimeout(() => overlay.classList.remove('active'), 3000);
       } catch (e) {
         clearInterval(tick);
-        document.querySelector('.loading-text').innerText = "Error Occurred";
-        document.querySelector('.loading-subtext').innerText = e.message + " — try a different torrent with more seeders.";
+        document.querySelector('.loading-text').innerText = "Error";
+        document.querySelector('.loading-subtext').innerText = e.message + " — try a torrent with more seeders.";
         setTimeout(() => overlay.classList.remove('active'), 5000);
       }
     }
