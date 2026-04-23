@@ -396,78 +396,157 @@
     ];
     const trString = BEST_TRACKERS.map(tr => '&tr=' + encodeURIComponent(tr)).join('');
 
+    // All Torrentio providers enabled for maximum coverage
+    const TORRENTIO_PROVIDERS = 'providers=yts,eztv,rarbg,1337x,thepiratebay,kickasstorrents,torrentgalaxy,magnetdl,horriblesubs,nyaasi,tokyotosho,anidex';
+    const TORRENTIO_BASE = `https://torrentio.strem.fun/${TORRENTIO_PROVIDERS}`;
+
+    // YTS mirror list for HD movie torrents
+    const YTS_DOMAINS = ['yts.mx', 'yts.rs', 'yts.do'];
+
+    // Helper: safely fetch JSON, returns null on failure (never throws)
+    async function safeFetchJSON(url, timeoutMs = 8000) {
+      try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+        const res = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(timer);
+        const text = await res.text();
+        if (text.trim().startsWith('<')) return null; // Cloudflare HTML block
+        return JSON.parse(text);
+      } catch { return null; }
+    }
+
+    // Parse Torrentio stream objects into our result format
+    function parseTorrentioStreams(streams, query) {
+      const out = [];
+      for (const s of streams) {
+        if (!s.infoHash) continue;
+        let seeders = 0, size = 'Unknown';
+        if (s.title) {
+          const sm = s.title.match(/👤\s*(\d+)/);
+          if (sm) seeders = parseInt(sm[1], 10);
+          const szm = s.title.match(/💾\s*([^⚙️\n]+)/);
+          if (szm) size = szm[1].trim();
+        }
+        const cleanName = (s.title || query).split('\n')[0];
+        const trackerName = (s.name || 'Torrent').split('\n')[0];
+        out.push({
+          name: `(${trackerName}) ${cleanName}`,
+          size, seeders,
+          infoHash: s.infoHash.toLowerCase(),
+          magnet: `magnet:?xt=urn:btih:${s.infoHash}&dn=${encodeURIComponent(cleanName)}${trString}`
+        });
+      }
+      return out;
+    }
+
     // ---------------------------------------------------------------------------
-    // CLIENT-SIDE SEARCH: Runs directly from your phone's browser.
-    // Your residential IP (Jio/Airtel) is never blocked by Cloudflare.
-    // The Render server is NOT involved in search at all.
+    // CLIENT-SIDE SEARCH: All fetches run from your phone browser.
+    // Residential IP = Cloudflare never blocks. Server not involved.
+    //
+    // Sources searched (in parallel):
+    //   1. Torrentio (12 providers: 1337x, TPB, YTS, RARBG, KAT, TGx, etc.)
+    //   2. YTS API (HD movies, multiple mirrors)
+    //   3. Cinemeta searches BOTH movie + series catalogs
     // ---------------------------------------------------------------------------
     async function executeSearch() {
       const query = input.value.trim();
       if (!query) return;
 
       overlay.classList.add('active');
-      document.querySelector('.loading-text').innerText = "Searching swarm...";
-      document.querySelector('.loading-subtext').innerText = "Your phone is searching directly. No cloud middleman!";
+      document.querySelector('.loading-text').innerText = "Searching sources...";
+      document.querySelector('.loading-subtext').innerText = "Searching Torrentio, YTS, and more...";
       resultsContainer.style.display = 'none';
 
       try {
+        // Step 1: Search Cinemeta for BOTH movies and series concurrently
+        const [movieMeta, seriesMeta] = await Promise.all([
+          safeFetchJSON(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`),
+          safeFetchJSON(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(query)}.json`),
+        ]);
+
+        // Merge all Cinemeta matches (movies + series)
+        const allMetas = [
+          ...((movieMeta && movieMeta.metas) || []),
+          ...((seriesMeta && seriesMeta.metas) || []),
+        ];
+
+        // Step 2: Fire ALL source queries in parallel
+        const torrentioPromises = [];
+
+        // For each Cinemeta match (top 3), query Torrentio with ALL providers
+        for (const meta of allMetas.slice(0, 3)) {
+          const imdbId = meta.imdb_id || meta.id;
+          if (!imdbId) continue;
+          if (meta.type === 'series') {
+            torrentioPromises.push(
+              safeFetchJSON(`${TORRENTIO_BASE}/stream/series/${imdbId}:1:1.json`)
+            );
+          } else {
+            torrentioPromises.push(
+              safeFetchJSON(`${TORRENTIO_BASE}/stream/movie/${imdbId}.json`)
+            );
+          }
+        }
+
+        // YTS API: try mirrors for HD movie results
+        const ytsPromise = (async () => {
+          for (const domain of YTS_DOMAINS) {
+            const data = await safeFetchJSON(
+              `https://${domain}/api/v2/list_movies.json?query_term=${encodeURIComponent(query)}&limit=10`,
+              5000
+            );
+            if (data && data.data && data.data.movies) return data.data.movies;
+          }
+          return [];
+        })();
+
+        // Wait for everything in parallel
+        const [ytsMovies, ...torrentioResults] = await Promise.all([
+          ytsPromise,
+          ...torrentioPromises,
+        ]);
+
+        // Step 3: Merge all results, deduplicate by infoHash
+        const seen = new Set();
         let results = [];
 
-        // Step 1: Search Cinemeta for IMDb ID (runs from phone browser — Cloudflare allows residential IPs)
-        const metaRes = await fetch(
-          `https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`
-        );
-        const metaText = await metaRes.text();
-        if (metaText.trim().startsWith('<')) throw new Error('Cinemeta returned HTML — possible block. Try again.');
-        const metaData = JSON.parse(metaText);
+        const addUnique = (item) => {
+          if (seen.has(item.infoHash)) return;
+          seen.add(item.infoHash);
+          results.push(item);
+        };
 
-        if (!metaData || !metaData.metas || metaData.metas.length === 0) {
-          throw new Error("No results found for this movie.");
+        // Torrentio results
+        for (const torData of torrentioResults) {
+          if (!torData || !torData.streams) continue;
+          for (const r of parseTorrentioStreams(torData.streams, query)) {
+            addUnique(r);
+          }
         }
 
-        const meta = metaData.metas[0];
-        const imdbId = meta.imdb_id;
-
-        // Step 2: Query Torrentio with IMDb ID (also runs from phone browser)
-        let endpoint = `https://torrentio.strem.fun/stream/movie/${imdbId}.json`;
-        if (meta.type === 'series') {
-          endpoint = `https://torrentio.strem.fun/stream/series/${imdbId}:1:1.json`;
-        }
-
-        const torRes = await fetch(endpoint);
-        const torText = await torRes.text();
-        if (torText.trim().startsWith('<')) throw new Error('Torrentio returned HTML — possible block. Try again.');
-        const torData = JSON.parse(torText);
-
-        if (torData && torData.streams) {
-          for (const s of torData.streams) {
-            if (!s.infoHash) continue;
-
-            let seeders = 0;
-            let size = "Unknown";
-            if (s.title) {
-              const seedMatch = s.title.match(/👤\s*(\d+)/);
-              if (seedMatch) seeders = parseInt(seedMatch[1], 10);
-              const sizeMatch = s.title.match(/💾\s*([^⚙️\n]+)/);
-              if (sizeMatch) size = sizeMatch[1].trim();
-            }
-
-            const cleanName = (s.title || query).split('\n')[0];
-            const trackerName = (s.name || 'Torrent').split('\n')[0];
-            const magnet = `magnet:?xt=urn:btih:${s.infoHash}&dn=${encodeURIComponent(cleanName)}${trString}`;
-
-            results.push({
-              name: `(${trackerName}) ${cleanName}`,
-              size: size,
-              seeders: seeders,
-              magnet: magnet
+        // YTS results
+        for (const movie of ytsMovies) {
+          if (!movie.torrents) continue;
+          for (const t of movie.torrents) {
+            const hash = (t.hash || '').toLowerCase();
+            if (!hash) continue;
+            addUnique({
+              name: `(YTS) ${movie.title} (${movie.year}) [${t.quality}]`,
+              size: t.size || 'Unknown',
+              seeders: t.seeds || 0,
+              infoHash: hash,
+              magnet: `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(movie.title)}${trString}`
             });
           }
         }
 
         if (results.length === 0) {
-          throw new Error("No torrent results found for this title.");
+          throw new Error("No results found. Try different keywords.");
         }
+
+        // Sort by seeders by default (highest first = most reliable)
+        results.sort((a, b) => b.seeders - a.seeders);
 
         // Sort by latest release year if checkbox is checked
         const isSortLatest = document.getElementById('sortLatest').checked;
@@ -484,7 +563,10 @@
         resultsContainer.style.display = 'block';
         resultsList.innerHTML = '';
 
-        results.slice(0, 20).forEach(res => {
+        const countText = results.length >= 30 ? '30+' : results.length;
+        document.querySelector('#resultsContainer h2').innerText = `${countText} Results`;
+
+        results.slice(0, 30).forEach(res => {
           const item = document.createElement('div');
           item.className = 'result-item';
           item.innerHTML = `
