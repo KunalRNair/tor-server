@@ -434,14 +434,19 @@ function autoSetupNextEp(torrentName) {
   const curS = ep.season;
   const curE = ep.episode;
 
+  console.log(`[next-ep] autoSetupNextEp: parsed S${curS}E${curE} from "${torrentName.slice(0, 50)}"`);
+
   // Check if we have series context (set by showEditorialDetail)
   const ctx = window._seriesCtx;
   if (!ctx || !ctx.episodes || ctx.episodes.length === 0) {
-    // No series context loaded — try to load it from Cinemeta via IMDB detection
-    // (best effort: parse IMDB ID from page URL)
+    // No series context — try IMDB from URL, sessionStorage, or window global
     const detailMatch = window.location.pathname.match(/\/detail\/series\/([a-z]{2}\d+)/);
-    if (detailMatch) {
-      loadSeriesContextAndSetup(detailMatch[1], curS, curE);
+    const detailStored = sessionStorage.getItem('turant_detail_url') || '';
+    const storedMatch = detailStored.match(/\/detail\/series\/([a-z]{2}\d+)/);
+    const imdbId = detailMatch?.[1] || storedMatch?.[1] || window._currentImdbId || '';
+    if (imdbId) {
+      console.log(`[next-ep] No series ctx, loading from Cinemeta: ${imdbId}`);
+      loadSeriesContextAndSetup(imdbId, curS, curE);
     }
     return;
   }
@@ -465,12 +470,15 @@ async function loadSeriesContextAndSetup(imdbId, curS, curE) {
 function setupNextEpFromCtx(ctx, curS, curE) {
   const eps = ctx.episodes;
   const curIdx = eps.findIndex(e => e.season === curS && e.episode === curE);
+  console.log(`[next-ep] setupNextEpFromCtx: S${curS}E${curE} → idx ${curIdx}/${eps.length}`);
   if (curIdx < 0 || curIdx >= eps.length - 1) {
+    console.log('[next-ep] No next episode available');
     nextEpInfo = null;
     return;
   }
   const next = eps[curIdx + 1];
   const nextLabel = `S${String(next.season).padStart(2,'0')}E${String(next.episode).padStart(2,'0')}${next.name ? ' — ' + next.name : ''}`;
+  console.log(`[next-ep] Next episode ready: ${nextLabel}`);
   nextEpInfo = {
     label: nextLabel,
     onPlay: async () => {
@@ -482,7 +490,7 @@ function setupNextEpFromCtx(ctx, curS, curE) {
         torrents.sort((a,b) => b.seeders - a.seeders);
         const best = torrents[0];
         hideOverlay();
-        await startStream(encodeURIComponent(best.magnet), (best.name || '').replace(/'/g, "\\'"));
+        await startStream(encodeURIComponent(best.magnet), best.name || '');
       } catch (e) {
         setLoadingText('Error');
         setLoadingSubtext(e.message);
