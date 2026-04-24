@@ -230,17 +230,38 @@ async function executeSearch() {
     }
 
     if (validGroups.length === 0 || validGroups.every(g => (g.torrents?.length || 0) === 0 && (g.episodes?.length || 0) === 0 && !g.seasons)) {
-      // Fallback: PirateBay general search (all categories)
-      const tpbData = await safeFetchJSON(`/api/search/tpb?q=${encodeURIComponent(cleanQ)}`);
+      // Fallback: TPB + SolidTorrents + 1337x direct search
+      const [tpbData, solidData] = await Promise.all([
+        safeFetchJSON(`/api/search/tpb?q=${encodeURIComponent(cleanQ)}`),
+        safeFetchJSON(`/api/search/solid?q=${encodeURIComponent(cleanQ)}`)
+      ]);
+      let results = [];
+      const seen = new Set();
       if (tpbData && tpbData.length > 0 && tpbData[0]?.name !== 'No results returned') {
-        const results = tpbData.map(t => {
+        for (const t of tpbData) {
           const hash = (t.info_hash || '').toLowerCase();
+          if (!hash || seen.has(hash)) continue;
+          seen.add(hash);
           const sz = parseInt(t.size, 10) || 0;
-          return { name: t.name, source: 'TPB', size: sz > 1073741824 ? (sz/1073741824).toFixed(2)+' GB' : (sz/1048576).toFixed(1)+' MB',
+          results.push({ name: t.name, source: 'TPB', size: sz > 1073741824 ? (sz/1073741824).toFixed(2)+' GB' : (sz/1048576).toFixed(1)+' MB',
             seeders: parseInt(t.seeders, 10) || 0, released: fmtDate(parseInt(t.added, 10)), infoHash: hash,
-            magnet: `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(t.name)}${trString}` };
-        }).filter(t => t.infoHash).sort((a,b) => b.seeders - a.seeders);
-        if (results.length > 0) { showFlatResults(results, cleanQ); return; }
+            magnet: `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(t.name)}${trString}` });
+        }
+      }
+      if (solidData?.results?.length) {
+        for (const t of solidData.results) {
+          const hash = (t.infohash || '').toLowerCase();
+          if (!hash || seen.has(hash)) continue;
+          seen.add(hash);
+          results.push({ name: t.title, source: 'Solid', size: t.size ? (t.size > 1073741824 ? (t.size/1073741824).toFixed(2)+' GB' : (t.size/1048576).toFixed(1)+' MB') : 'Unknown',
+            seeders: t.swarm?.seeders || 0, infoHash: hash,
+            magnet: t.magnet || `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(t.title)}${trString}` });
+        }
+      }
+      if (results.length > 0) {
+        results.sort((a,b) => b.seeders - a.seeders);
+        showFlatResults(results, cleanQ);
+        return;
       }
       throw new Error("No results found. Try different keywords.");
     }
