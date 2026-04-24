@@ -393,8 +393,14 @@ async function startStream(encodedMagnet, name) {
     if (!unrestricted?.download) throw new Error('Could not get stream link.');
 
     hideOverlay();
-    const proxyUrl = '/api/stream?url=' + encodeURIComponent(unrestricted.download);
-    openPlayer(proxyUrl, name, unrestricted.download);
+    const dl = unrestricted.download;
+    const isMKV = dl.toLowerCase().includes('.mkv');
+    // MP4/WebM: play RD URL directly (no server proxy = no buffering)
+    // MKV: needs FFmpeg remux through server
+    const streamUrl = isMKV
+      ? '/api/stream?url=' + encodeURIComponent(dl)
+      : dl;
+    openPlayer(streamUrl, name, dl);
 
     // Auto-detect episode and set up "Next Episode" (Netflix-style)
     autoSetupNextEp(name);

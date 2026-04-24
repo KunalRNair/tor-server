@@ -422,10 +422,12 @@ async function startServer() {
     try {
       const ff = spawn('ffprobe', [
         '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams',
+        '-analyzeduration', '5000000', '-probesize', '5000000',
         '-i', url
       ], { stdio: ['ignore', 'pipe', 'pipe'] });
       let out = '';
       ff.stdout.on('data', d => { out += d.toString(); });
+      ff.stderr.on('data', () => {});  // drain stderr
       ff.on('close', () => {
         try {
           const info = JSON.parse(out);
@@ -443,7 +445,7 @@ async function startServer() {
           res.json({ duration, subtitles: subs });
         } catch { res.json({ duration: 0, subtitles: [] }); }
       });
-      setTimeout(() => ff.kill(), 15000);
+      setTimeout(() => ff.kill(), 8000);
     } catch { res.json({ duration: 0, subtitles: [] }); }
   });
 
