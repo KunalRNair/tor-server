@@ -338,7 +338,6 @@ async function startServer() {
 
         // transcode=1 → full re-encode (guaranteed sync, heavy CPU)
         // default → copy video + transcode audio to AAC (light CPU, compatible)
-        // -async 1 syncs audio pts to video pts so no drift
         const fullTranscode = forceTranscode || req.query.transcode === '1';
         const ffArgs = [
           '-analyzeduration', '3000000',
@@ -352,8 +351,7 @@ async function startServer() {
             ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
             : ['-c:v', 'copy']),
           '-c:a', 'aac', '-b:a', '192k',
-          '-af', 'aresample=async=1000:first_pts=0',
-          '-max_delay', '0',
+          '-af', 'asetpts=PTS-STARTPTS',
           '-fflags', '+genpts+discardcorrupt',
           '-avoid_negative_ts', 'make_zero',
           '-map', '0:v:0', '-map', '0:a:0',
