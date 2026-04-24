@@ -245,45 +245,45 @@ function openPlayer(url, title, directUrl) {
   spriteData = null;
   spriteImg = null;
 
-  // Fetch duration + embedded sub list from ffprobe
+  // Fire probe (duration + track list) and sub extraction in PARALLEL
   if (directUrl) {
+    // 1) Probe for duration + embedded track metadata
     fetch('/api/stream/probe?url=' + encodeURIComponent(directUrl))
       .then(r => r.json())
       .then(d => {
         if (d.duration > 0) streamDuration = d.duration;
         if (d.subtitles && d.subtitles.length > 0) {
           availableSubs = d.subtitles;
-          console.log(`[subs] Found ${d.subtitles.length} embedded tracks`);
-          // Auto-extract first English embedded sub (best for anime/fansubs)
-          const engIdx = d.subtitles.findIndex(s => /eng|english/i.test(s.lang) || /eng|english/i.test(s.title));
-          const preloadIdx = engIdx >= 0 ? engIdx : 0;
-          console.log(`[subs] Auto-extracting embedded track ${preloadIdx}...`);
-          const ac = new AbortController();
-          setTimeout(() => ac.abort(), 90000); // 90s — server buffers full VTT before sending
-          fetch(`/api/stream/subs?url=${encodeURIComponent(directUrl)}&track=${preloadIdx}`, { signal: ac.signal })
-            .then(r => r.text())
-            .then(vtt => {
-              const cues = parseWebVTT(vtt);
-              if (cues.length > 0) {
-                loadedSubCues = cues;
-                activeSubTrack = preloadIdx;
-                playerSubsBtn.classList.add('active-subs');
-                console.log(`[subs] Embedded track ${preloadIdx} loaded: ${cues.length} cues`);
-              } else {
-                console.log('[subs] Embedded extraction returned 0 cues, trying OpenSubtitles');
-                searchOpenSubs(title, true);
-              }
-            })
-            .catch(err => {
-              console.warn('[subs] Embedded extraction failed:', err.name);
-              searchOpenSubs(title, true);
-            });
+          console.log(`[subs] Probe found ${d.subtitles.length} embedded tracks`);
+        }
+      })
+      .catch(err => console.warn('[probe] Failed:', err));
+
+    // 2) Start extracting track 0 immediately — don't wait for probe
+    console.log('[subs] Preloading embedded track 0 (parallel with probe)...');
+    const subAc = new AbortController();
+    setTimeout(() => subAc.abort(), 90000);
+    fetch(`/api/stream/subs?url=${encodeURIComponent(directUrl)}&track=0`, { signal: subAc.signal })
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
+      .then(vtt => {
+        const cues = parseWebVTT(vtt);
+        if (cues.length > 0) {
+          loadedSubCues = cues;
+          activeSubTrack = 0;
+          playerSubsBtn.classList.add('active-subs');
+          console.log(`[subs] Embedded track 0 loaded: ${cues.length} cues`);
         } else {
-          // No embedded subs — try OpenSubtitles
+          console.log('[subs] Embedded extraction returned 0 cues, trying OpenSubtitles');
           searchOpenSubs(title, true);
         }
       })
-      .catch(err => { console.warn('[probe] Failed:', err); searchOpenSubs(title, true); });
+      .catch(err => {
+        console.warn('[subs] Embedded extraction failed:', err.name);
+        searchOpenSubs(title, true);
+      });
+
+    // 3) Also start OpenSubtitles search in parallel (populates CC menu)
+    searchOpenSubs(title, false);
   }
 
   playerVideo.src = url;
