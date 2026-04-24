@@ -279,6 +279,26 @@ async function startServer() {
   });
 
   // ======================================================================
+  // YTS search proxy (avoids CORS — YTS domains block cross-origin)
+  // ======================================================================
+  const YTS_DOMAINS = ['yts.mx', 'yts.rs', 'yts.do'];
+  app.get('/api/search/yts', async (req, res) => {
+    const q = req.query.q;
+    if (!q) return res.status(400).json({ error: 'Missing query' });
+    for (const domain of YTS_DOMAINS) {
+      try {
+        const ytsRes = await fetch(
+          `https://${domain}/api/v2/list_movies.json?query_term=${encodeURIComponent(q)}&limit=10`,
+          { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) }
+        );
+        const data = await ytsRes.json();
+        if (data?.data?.movies) return res.json(data);
+      } catch {}
+    }
+    res.json({ data: { movies: [] } });
+  });
+
+  // ======================================================================
   // SolidTorrents search proxy (DHT index — avoids CORS)
   // ======================================================================
   app.get('/api/search/solid', async (req, res) => {

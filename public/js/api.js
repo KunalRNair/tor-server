@@ -22,7 +22,7 @@ const TRACKERS = [
 const trString = TRACKERS.map(tr => '&tr=' + encodeURIComponent(tr)).join('');
 const TORRENTIO_PROVIDERS = 'providers=yts,eztv,rarbg,1337x,thepiratebay,kickasstorrents,torrentgalaxy,magnetdl,horriblesubs,nyaasi,tokyotosho,anidex';
 const TORRENTIO_BASE = `https://torrentio.strem.fun/${TORRENTIO_PROVIDERS}`;
-const YTS_DOMAINS = ['yts.mx', 'yts.rs', 'yts.do'];
+// YTS search goes through server proxy to avoid CORS
 
 async function safeFetchJSON(url, timeoutMs = 8000) {
   try {
@@ -201,11 +201,8 @@ async function executeSearch() {
     });
 
     const ytsPromise = cat === 'series' ? Promise.resolve([]) : (async () => {
-      for (const domain of YTS_DOMAINS) {
-        const data = await safeFetchJSON(`https://${domain}/api/v2/list_movies.json?query_term=${encodeURIComponent(cleanQ)}&limit=10`, 5000);
-        if (data?.data?.movies) return data.data.movies;
-      }
-      return [];
+      const data = await safeFetchJSON(`/api/search/yts?q=${encodeURIComponent(cleanQ)}`, 8000);
+      return data?.data?.movies || [];
     })();
 
     const [ytsMovies, ...groups] = await Promise.all([ytsPromise, ...fetchPromises]);
