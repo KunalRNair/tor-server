@@ -331,14 +331,16 @@ function openPlayer(url, title, directUrl) {
   document.title = `Turant — ${title || 'Playing'}`;
 
   function showPlaybackError() {
+    // Clear expired stream state so reload doesn't loop on bad URL
+    sessionStorage.removeItem('turant_stream');
     const wrap = document.getElementById('playerVideoWrap');
-    const dlLink = currentStreamDirectUrl || url.replace('/api/stream?url=', '');
+    const detailUrl = sessionStorage.getItem('turant_detail_url') || '/';
     wrap.innerHTML = `
       <div style="text-align:center;color:#888;padding:2rem">
         <div style="font-size:1.5rem;margin-bottom:1rem">&#9888;</div>
-        <div style="font-size:0.85rem;margin-bottom:0.5rem">Browser can't play this format</div>
-        <div style="font-size:0.72rem;color:#555;margin-bottom:1.5rem">This file uses a codec your browser doesn't support (likely HEVC/MKV). Try downloading and playing in VLC.</div>
-        <a href="${dlLink}" style="color:#F1EBE0;text-decoration:underline;font-size:0.8rem;letter-spacing:0.05em">DOWNLOAD FILE</a>
+        <div style="font-size:0.85rem;margin-bottom:0.5rem">Stream expired or format not supported</div>
+        <div style="font-size:0.72rem;color:#555;margin-bottom:1.5rem">The stream link may have expired. Go back and try again.</div>
+        <a href="${detailUrl}" style="color:#E8A263;text-decoration:underline;font-size:0.8rem;letter-spacing:0.05em">GO BACK</a>
       </div>
     `;
   }
