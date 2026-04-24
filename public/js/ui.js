@@ -706,11 +706,16 @@ playerSubsBtn.addEventListener('click', (e) => {
         activeOpenSubId = null;
         playerSubsBtn.classList.add('active-subs');
         playerSubsMenu.classList.remove('open');
+        const ov = getSubOverlay();
+        ov.textContent = 'Loading subtitles...';
+        ov.style.display = '';
         try {
           const res = await fetch(`/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`);
           const vtt = await res.text();
           loadedSubCues = parseWebVTT(vtt);
-        } catch { loadedSubCues = []; }
+          if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
+          else { ov.style.display = 'none'; }
+        } catch { loadedSubCues = []; ov.textContent = 'Failed to load subtitles'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
       });
       playerSubsMenu.appendChild(btn);
     });
@@ -733,11 +738,16 @@ playerSubsBtn.addEventListener('click', (e) => {
         activeOpenSubId = sub.id;
         playerSubsBtn.classList.add('active-subs');
         playerSubsMenu.classList.remove('open');
+        const ov = getSubOverlay();
+        ov.textContent = 'Loading subtitles...';
+        ov.style.display = '';
         try {
           const res = await fetch(`/api/subs/download?url=${encodeURIComponent(sub.url)}`);
           const vtt = await res.text();
           loadedSubCues = parseWebVTT(vtt);
-        } catch { loadedSubCues = []; }
+          if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
+          else { ov.style.display = 'none'; }
+        } catch { loadedSubCues = []; ov.textContent = 'Failed to load subtitles'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
       });
       playerSubsMenu.appendChild(btn);
     });

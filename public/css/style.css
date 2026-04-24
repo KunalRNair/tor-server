@@ -1057,6 +1057,7 @@ body.detail-open .content { opacity: 0; pointer-events: none; }
 
 /* Video container */
 .player-video-wrap {
+  position: relative;
   flex: 1;
   display: flex;
   align-items: center;

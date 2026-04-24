@@ -11,8 +11,8 @@
   <title>Turant — Search</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
-  <link rel="stylesheet" href="/css/style.css?v=4">
-  <link rel="stylesheet" href="/css/loaders.css?v=4">
+  <link rel="stylesheet" href="/css/style.css?v=5">
+  <link rel="stylesheet" href="/css/loaders.css?v=5">
   <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.10/dist/dotlottie-wc.js" type="module"></script>
 </head>
 <body>
@@ -150,9 +150,9 @@
     <div class="overlay-progress"></div>
   </div>
 
-  <script src="/js/ui.js?v=4"></script>
-  <script src="/js/api.js?v=4"></script>
-  <script src="/js/loaders.js?v=4"></script>
+  <script src="/js/ui.js?v=5"></script>
+  <script src="/js/api.js?v=5"></script>
+  <script src="/js/loaders.js?v=5"></script>
   <script>
     const input = document.getElementById('movieInput');
     const resultsSection = document.getElementById('resultsSection');
@@ -491,6 +491,7 @@
       if (imdbId) {
         const detailUrl = `/detail/${m.type || 'movie'}/${imdbId}`;
         history.pushState({ view: 'detail', type: m.type, id: imdbId }, '', detailUrl);
+        sessionStorage.setItem('turant_detail_url', detailUrl);
         document.title = `Turant — ${m.name}`;
       }
 
@@ -623,9 +624,10 @@
     const initPath = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
 
-    // Route: /watch — stream URLs are temporary, redirect to home
+    // Route: /watch — stream URLs are temporary, redirect back to detail page or search
     if (initPath === '/watch') {
-      window.location.replace('/');
+      const returnUrl = sessionStorage.getItem('turant_detail_url');
+      window.location.replace(returnUrl || '/');
     }
     // Route: /detail/:type/:id — load detail directly
     else if (initPath.match(/^\/detail\/(movie|series)\/([a-z]{2}\d+)$/)) {

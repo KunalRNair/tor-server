@@ -540,15 +540,17 @@ async function startServer() {
       res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
       res.setHeader('Access-Control-Allow-Origin', '*');
       const ff = spawn('ffmpeg', [
+        '-timeout', '10000000',     // 10s network timeout (microseconds)
         '-i', url,
         '-map', `0:s:${track}`,
         '-f', 'webvtt',
         '-'
       ], { stdio: ['ignore', 'pipe', 'pipe'] });
       ff.stdout.pipe(res);
+      ff.stderr.on('data', () => {});  // drain stderr to prevent blocking
       ff.on('close', () => { if (!res.writableEnded) res.end(); });
       req.on('close', () => ff.kill('SIGKILL'));
-      setTimeout(() => ff.kill(), 30000);
+      setTimeout(() => ff.kill(), 15000);
     } catch (e) {
       if (!res.headersSent) res.status(500).json({ error: e.message });
     }
@@ -585,8 +587,19 @@ async function startServer() {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'Missing url' });
     try {
-      const subRes = await fetch(url);
-      const subText = await subRes.text();
+      const subRes = await fetch(url, { redirect: 'follow' });
+      if (!subRes.ok) throw new Error(`Subtitle fetch failed: ${subRes.status}`);
+
+      const buf = Buffer.from(await subRes.arrayBuffer());
+
+      // Detect gzip (Stremio addon often serves .gz subs)
+      let subText;
+      if (buf[0] === 0x1f && buf[1] === 0x8b) {
+        const { gunzipSync } = require('zlib');
+        subText = gunzipSync(buf).toString('utf-8');
+      } else {
+        subText = buf.toString('utf-8');
+      }
 
       // Convert SRT to WebVTT if needed
       let vtt = subText;
@@ -598,6 +611,7 @@ async function startServer() {
       res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
       res.send(vtt);
     } catch (e) {
+      console.error('[subs/download] Error:', e.message);
       if (!res.headersSent) res.status(500).json({ error: e.message });
     }
   });
