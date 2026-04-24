@@ -259,28 +259,55 @@ function openPlayer(url, title, directUrl) {
       })
       .catch(err => console.warn('[probe] Failed:', err));
 
-    // 2) Start extracting track 0 immediately — don't wait for probe
+    // 2) Start extracting track 0 immediately — stream and parse incrementally
     console.log('[subs] Preloading embedded track 0 (parallel with probe)...');
+    const subOv = getSubOverlay();
+    subOv.textContent = 'Loading subtitles...';
+    subOv.style.display = '';
     const subAc = new AbortController();
-    setTimeout(() => subAc.abort(), 90000);
-    fetch(`/api/stream/subs?url=${encodeURIComponent(directUrl)}&track=0`, { signal: subAc.signal })
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.text(); })
-      .then(vtt => {
-        const cues = parseWebVTT(vtt);
-        if (cues.length > 0) {
-          loadedSubCues = cues;
+    setTimeout(() => subAc.abort(), 120000);
+    (async () => {
+      try {
+        const resp = await fetch(`/api/stream/subs?url=${encodeURIComponent(directUrl)}&track=0`, { signal: subAc.signal });
+        if (!resp.ok) throw new Error(resp.status);
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        let vttBuf = '';
+        let lastCueCount = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (value) vttBuf += decoder.decode(value, { stream: true });
+          // Parse cues from what we have so far
+          const cues = parseWebVTT(vttBuf);
+          if (cues.length > lastCueCount) {
+            loadedSubCues = cues;
+            activeSubTrack = 0;
+            playerSubsBtn.classList.add('active-subs');
+            if (lastCueCount === 0) { subOv.style.display = 'none'; }
+            subOv.textContent = `Loading subs... (${cues.length} cues)`;
+            console.log(`[subs] Streaming: ${cues.length} cues so far`);
+            lastCueCount = cues.length;
+          }
+          if (done) break;
+        }
+        const finalCues = parseWebVTT(vttBuf);
+        if (finalCues.length > 0) {
+          loadedSubCues = finalCues;
           activeSubTrack = 0;
           playerSubsBtn.classList.add('active-subs');
-          console.log(`[subs] Embedded track 0 loaded: ${cues.length} cues`);
+          subOv.style.display = 'none';
+          console.log(`[subs] Embedded track 0 complete: ${finalCues.length} cues`);
         } else {
           console.log('[subs] Embedded extraction returned 0 cues, trying OpenSubtitles');
+          subOv.style.display = 'none';
           searchOpenSubs(title, true);
         }
-      })
-      .catch(err => {
+      } catch (err) {
         console.warn('[subs] Embedded extraction failed:', err.name);
-        searchOpenSubs(title, true);
-      });
+        subOv.style.display = 'none';
+        if (loadedSubCues.length === 0) searchOpenSubs(title, true);
+      }
+    })();
 
     // 3) Also start OpenSubtitles search in parallel (populates CC menu)
     searchOpenSubs(title, false);
@@ -866,12 +893,24 @@ playerSubsBtn.addEventListener('click', (e) => {
           const fetchUrl = `/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`;
           console.log('[subs] Fetching embedded:', fetchUrl.slice(0, 100));
           const ac = new AbortController();
-          setTimeout(() => ac.abort(), 90000);
+          setTimeout(() => ac.abort(), 120000);
           const res = await fetch(fetchUrl, { signal: ac.signal });
           console.log('[subs] Embedded response status:', res.status);
-          const vtt = await res.text();
-          console.log('[subs] Embedded VTT length:', vtt.length, 'first 100:', vtt.slice(0, 100));
-          loadedSubCues = parseWebVTT(vtt);
+          const reader = res.body.getReader();
+          const decoder = new TextDecoder();
+          let vttBuf = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (value) vttBuf += decoder.decode(value, { stream: true });
+            const cues = parseWebVTT(vttBuf);
+            if (cues.length > 0) {
+              loadedSubCues = cues;
+              ov.textContent = `Loading subs... (${cues.length})`;
+              if (cues.length > loadedSubCues.length || loadedSubCues.length === cues.length) ov.style.display = 'none';
+            }
+            if (done) break;
+          }
+          loadedSubCues = parseWebVTT(vttBuf);
           console.log('[subs] Embedded parsed cues:', loadedSubCues.length);
           if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
           else { ov.style.display = 'none'; }

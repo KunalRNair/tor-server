@@ -562,6 +562,7 @@ async function startServer() {
     console.log(`[subs/extract] Track ${track} from ${url.slice(0, 60)}...`);
     try {
       res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
       const ff = spawn('ffmpeg', [
         '-analyzeduration', '0',
         '-probesize', '50000000',
@@ -570,25 +571,16 @@ async function startServer() {
         '-f', 'webvtt',
         '-'
       ], { stdio: ['ignore', 'pipe', 'pipe'] });
-      // Buffer entire VTT output, send at once (prevents partial cue delivery)
-      const chunks = [];
-      ff.stdout.on('data', (c) => chunks.push(c));
+      // Stream VTT as it comes — client parses incrementally
+      ff.stdout.pipe(res);
       let stderrChunk = '';
       ff.stderr.on('data', (d) => { stderrChunk = d.toString().slice(-200); });
       ff.on('close', (code) => {
-        console.log(`[subs/extract] FFmpeg exit code: ${code}, chunks: ${chunks.length}${code !== 0 ? ' stderr: ' + stderrChunk : ''}`);
-        if (res.headersSent) return;
-        if (code === 0 || chunks.length > 0) {
-          const vtt = Buffer.concat(chunks).toString('utf-8');
-          console.log(`[subs/extract] Sending ${vtt.length} bytes, ~${(vtt.match(/-->/g) || []).length} cues`);
-          res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
-          res.send(vtt);
-        } else {
-          res.status(500).json({ error: 'Extraction failed' });
-        }
+        console.log(`[subs/extract] FFmpeg exit code: ${code}${code !== 0 ? ' stderr: ' + stderrChunk : ''}`);
+        if (!res.writableEnded) res.end();
       });
       req.on('close', () => ff.kill('SIGKILL'));
-      setTimeout(() => { console.log('[subs/extract] 90s timeout — killing'); ff.kill(); }, 90000);
+      setTimeout(() => { console.log('[subs/extract] 120s timeout — killing'); ff.kill(); }, 120000);
     } catch (e) {
       console.error('[subs/extract] Error:', e.message);
       if (!res.headersSent) res.status(500).json({ error: e.message });
