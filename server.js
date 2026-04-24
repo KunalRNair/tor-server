@@ -318,8 +318,8 @@ async function startServer() {
         res.setHeader('Cache-Control', 'no-cache');
 
         // transcode=1 → full re-encode (guaranteed sync, heavy CPU)
-        // default → copy both streams (fast, perfect sync)
-        // If copy fails (incompatible codec), retry with transcode
+        // default → copy video + transcode audio to AAC (light CPU, compatible)
+        // -async 1 syncs audio pts to video pts so no drift
         const fullTranscode = forceTranscode || req.query.transcode === '1';
         const ffArgs = [
           '-analyzeduration', '10000000',
@@ -329,11 +329,11 @@ async function startServer() {
           '-movflags', 'frag_keyframe+empty_moov+faststart',
           '-f', 'mp4',
           ...(fullTranscode
-            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
-               '-c:a', 'aac', '-b:a', '192k']
-            : ['-c:v', 'copy', '-c:a', 'copy']),
-          '-start_at_zero',
-          '-fflags', '+genpts',
+            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
+            : ['-c:v', 'copy']),
+          '-c:a', 'aac', '-b:a', '192k',
+          '-async', '1',
+          '-fflags', '+genpts+discardcorrupt',
           '-avoid_negative_ts', 'make_zero',
           '-map', '0:v:0', '-map', '0:a:0',
           '-'
