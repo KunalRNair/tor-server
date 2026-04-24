@@ -331,18 +331,29 @@ function openPlayer(url, title, directUrl) {
   document.title = `Turant — ${title || 'Playing'}`;
 
   function showPlaybackError() {
-    // Clear expired stream state so reload doesn't loop on bad URL
-    sessionStorage.removeItem('turant_stream');
     const wrap = document.getElementById('playerVideoWrap');
     const detailUrl = sessionStorage.getItem('turant_detail_url') || '/';
+    const canTranscode = currentStreamBaseUrl && currentStreamBaseUrl.includes('/api/stream?url=');
+    const transcodeUrl = canTranscode ? currentStreamBaseUrl + '&transcode=1' : '';
     wrap.innerHTML = `
       <div style="text-align:center;color:#888;padding:2rem">
         <div style="font-size:1.5rem;margin-bottom:1rem">&#9888;</div>
-        <div style="font-size:0.85rem;margin-bottom:0.5rem">Stream expired or format not supported</div>
-        <div style="font-size:0.72rem;color:#555;margin-bottom:1.5rem">The stream link may have expired. Go back and try again.</div>
-        <a href="${detailUrl}" style="color:#E8A263;text-decoration:underline;font-size:0.8rem;letter-spacing:0.05em">GO BACK</a>
+        <div style="font-size:0.85rem;margin-bottom:0.5rem">Can't play this format</div>
+        <div style="font-size:0.72rem;color:#555;margin-bottom:1rem">Your browser may not support this codec (HEVC/H.265).</div>
+        ${canTranscode ? `<button id="retryTranscode" style="background:#E8A263;color:#000;border:none;padding:8px 20px;border-radius:4px;font-size:0.8rem;font-weight:600;cursor:pointer;margin-bottom:12px">Try Compatible Mode</button><div style="font-size:0.65rem;color:#555;margin-bottom:12px">Re-encodes to H.264 — may be slower to start</div>` : ''}
+        <div><a href="${detailUrl}" style="color:#888;text-decoration:underline;font-size:0.75rem;letter-spacing:0.05em">GO BACK</a></div>
       </div>
     `;
+    if (canTranscode) {
+      document.getElementById('retryTranscode').addEventListener('click', () => {
+        wrap.innerHTML = '<video id="playerVideo" autoplay playsinline></video>';
+        const vid = wrap.querySelector('video');
+        vid.src = transcodeUrl;
+        showPlayerLoader('Re-encoding for compatibility...');
+        vid.addEventListener('error', () => { hidePlayerLoader(); sessionStorage.removeItem('turant_stream'); wrap.innerHTML = '<div style="text-align:center;color:#888;padding:2rem"><div style="font-size:0.85rem">Transcode failed</div><div style="margin-top:12px"><a href="' + detailUrl + '" style="color:#E8A263;text-decoration:underline">GO BACK</a></div></div>'; }, { once: true });
+        vid.addEventListener('playing', () => { hidePlayerLoader(); }, { once: true });
+      });
+    }
   }
 
   let playbackCheckTimer = null;
