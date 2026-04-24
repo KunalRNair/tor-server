@@ -352,7 +352,8 @@ async function startServer() {
             ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
             : ['-c:v', 'copy']),
           '-c:a', 'aac', '-b:a', '192k',
-          '-af', 'aresample=async=1:first_pts=0',
+          '-af', 'aresample=async=1000:first_pts=0',
+          '-max_delay', '0',
           '-fflags', '+genpts+discardcorrupt',
           '-avoid_negative_ts', 'make_zero',
           '-map', '0:v:0', '-map', '0:a:0',
