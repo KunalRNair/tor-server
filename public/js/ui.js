@@ -259,7 +259,7 @@ function openPlayer(url, title, directUrl) {
           const preloadIdx = engIdx >= 0 ? engIdx : 0;
           console.log(`[subs] Auto-extracting embedded track ${preloadIdx}...`);
           const ac = new AbortController();
-          setTimeout(() => ac.abort(), 30000); // 30s timeout for slow servers
+          setTimeout(() => ac.abort(), 90000); // 90s — server buffers full VTT before sending
           fetch(`/api/stream/subs?url=${encodeURIComponent(directUrl)}&track=${preloadIdx}`, { signal: ac.signal })
             .then(r => r.text())
             .then(vtt => {
@@ -866,7 +866,7 @@ playerSubsBtn.addEventListener('click', (e) => {
           const fetchUrl = `/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`;
           console.log('[subs] Fetching embedded:', fetchUrl.slice(0, 100));
           const ac = new AbortController();
-          setTimeout(() => ac.abort(), 15000);
+          setTimeout(() => ac.abort(), 90000);
           const res = await fetch(fetchUrl, { signal: ac.signal });
           console.log('[subs] Embedded response status:', res.status);
           const vtt = await res.text();
