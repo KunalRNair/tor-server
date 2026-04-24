@@ -259,7 +259,7 @@ function openPlayer(url, title, directUrl) {
         // Search OpenSubtitles and auto-load English subs (fast + reliable)
         searchOpenSubs(title, true);
       })
-      .catch(() => { searchOpenSubs(title, true); });
+      .catch(err => { console.warn('[probe] Failed:', err); searchOpenSubs(title, true); });
   }
 
   playerVideo.src = url;
@@ -658,39 +658,57 @@ function searchOpenSubs(title, autoLoad) {
     }
   }
 
-  fetch(subUrl)
-    .then(r => r.json())
-    .then(subs => {
-      if (Array.isArray(subs) && subs.length > 0) {
-        openSubResults = subs;
-        playerSubsBtn.style.display = '';
-        console.log(`[subs] Found ${subs.length} external subtitles for ${imdbId}`);
+  console.log('[subs] Searching:', subUrl);
+  fetchSubsAndLoad(subUrl, imdbId, type, autoLoad)
+    .catch(err => console.error('[subs] Search failed:', err));
+}
 
-        // Auto-load first English subtitle if requested
-        if (autoLoad) {
-          const engSub = subs.find(s => /^eng?$/i.test(s.lang)) || subs[0];
-          if (engSub && engSub.url) {
-            console.log('[subs] Auto-loading OpenSub:', engSub.lang, engSub.id);
-            const ac = new AbortController();
-            setTimeout(() => ac.abort(), 12000);
-            fetch(`/api/subs/download?url=${encodeURIComponent(engSub.url)}`, { signal: ac.signal })
-              .then(r => r.ok ? r.text() : Promise.reject('HTTP ' + r.status))
-              .then(vtt => {
-                const cues = parseWebVTT(vtt);
-                if (cues.length > 0) {
-                  loadedSubCues = cues;
-                  activeOpenSubId = engSub.id;
-                  activeSubTrack = -1;
-                  playerSubsBtn.classList.add('active-subs');
-                  console.log(`[subs] Auto-loaded OpenSub ${engSub.lang}: ${cues.length} cues`);
-                }
-              })
-              .catch(err => console.warn('[subs] Auto-load failed:', err));
-          }
+async function fetchSubsAndLoad(subUrl, imdbId, type, autoLoad) {
+  let res = await fetch(subUrl);
+  let subs = await res.json();
+
+  // If episode-specific search returned nothing, retry without episode
+  if ((!Array.isArray(subs) || subs.length === 0) && subUrl.includes('&season=')) {
+    const baseUrl = `/api/subs/search?imdb=${encodeURIComponent(imdbId)}&type=${type}`;
+    console.log('[subs] No episode-specific subs, retrying series-level:', baseUrl);
+    res = await fetch(baseUrl);
+    subs = await res.json();
+  }
+
+  if (!Array.isArray(subs) || subs.length === 0) {
+    console.log('[subs] No subtitles found for', imdbId);
+    return;
+  }
+
+  openSubResults = subs;
+  console.log(`[subs] Found ${subs.length} external subtitles for ${imdbId}`);
+
+  // Auto-load first English subtitle
+  if (autoLoad) {
+    const engSub = subs.find(s => /^eng?$/i.test(s.lang)) || subs[0];
+    if (engSub && engSub.url) {
+      console.log('[subs] Auto-loading OpenSub:', engSub.lang, engSub.id);
+      try {
+        const ac = new AbortController();
+        setTimeout(() => ac.abort(), 15000);
+        const dlRes = await fetch(`/api/subs/download?url=${encodeURIComponent(engSub.url)}`, { signal: ac.signal });
+        if (!dlRes.ok) throw new Error('HTTP ' + dlRes.status);
+        const vtt = await dlRes.text();
+        const cues = parseWebVTT(vtt);
+        if (cues.length > 0) {
+          loadedSubCues = cues;
+          activeOpenSubId = engSub.id;
+          activeSubTrack = -1;
+          playerSubsBtn.classList.add('active-subs');
+          console.log(`[subs] Auto-loaded OpenSub ${engSub.lang}: ${cues.length} cues`);
+        } else {
+          console.log('[subs] Auto-load returned 0 cues');
         }
+      } catch (err) {
+        console.warn('[subs] Auto-load failed:', err);
       }
-    })
-    .catch(() => {});
+    }
+  }
 }
 
 // ═══════════════════════════════════════════

@@ -1197,10 +1197,15 @@ body.detail-open .content { opacity: 0; pointer-events: none; }
 }
 #playerSubsBtn {
   font-weight: 700;
+  font-size: 0.8rem;
   letter-spacing: 1px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 3px;
 }
 #playerSubsBtn.active-subs {
   color: #22C55E;
+  border-color: #22C55E;
 }
 .player-subs-menu {
   display: none;
