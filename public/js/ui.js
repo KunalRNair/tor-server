@@ -314,8 +314,12 @@ function openPlayer(url, title, directUrl) {
   playerPlayPause.innerHTML = '&#10074;&#10074;';
   showUI();
 
-  // Persist stream state for reload resilience
-  sessionStorage.setItem('turant_stream', JSON.stringify({ url, title, directUrl }));
+  // Persist stream state for reload resilience (include IMDB context for next-ep on reload)
+  sessionStorage.setItem('turant_stream', JSON.stringify({
+    url, title, directUrl,
+    imdbId: window._currentImdbId || window._seriesCtx?.imdbId || '',
+    type: window._currentType || (window._seriesCtx ? 'series' : '')
+  }));
 
   // Auto-detect episode and set up "Next Episode" (works on reload too)
   if (typeof autoSetupNextEp === 'function') autoSetupNextEp(title);

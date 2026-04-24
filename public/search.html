@@ -11,8 +11,8 @@
   <title>Turant — Search</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
-  <link rel="stylesheet" href="/css/style.css?v=25">
-  <link rel="stylesheet" href="/css/loaders.css?v=25">
+  <link rel="stylesheet" href="/css/style.css?v=26">
+  <link rel="stylesheet" href="/css/loaders.css?v=26">
   <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.10/dist/dotlottie-wc.js" type="module"></script>
 </head>
 <body>
@@ -150,9 +150,9 @@
     <div class="overlay-progress"></div>
   </div>
 
-  <script src="/js/ui.js?v=25"></script>
-  <script src="/js/api.js?v=25"></script>
-  <script src="/js/loaders.js?v=25"></script>
+  <script src="/js/ui.js?v=26"></script>
+  <script src="/js/api.js?v=26"></script>
+  <script src="/js/loaders.js?v=26"></script>
   <script>
     const input = document.getElementById('movieInput');
     const resultsSection = document.getElementById('resultsSection');
@@ -630,8 +630,24 @@
       if (savedStream) {
         try {
           const s = JSON.parse(savedStream);
-          // Wait for RD check then resume player
-          rdReady.then(() => {
+          // Restore globals for next-ep detection
+          if (s.imdbId) window._currentImdbId = s.imdbId;
+          if (s.type) window._currentType = s.type;
+          // Preload series context so next-ep works on reload
+          rdReady.then(async () => {
+            if (s.type === 'series' && s.imdbId && !window._seriesCtx) {
+              try {
+                const metaRes = await safeFetchJSON(`https://v3-cinemeta.strem.io/meta/series/${s.imdbId}.json`);
+                if (metaRes?.meta?.videos) {
+                  const allEps = metaRes.meta.videos
+                    .filter(v => v.season && v.episode)
+                    .sort((a,b) => a.season - b.season || a.episode - b.episode)
+                    .map(v => ({ season: v.season, episode: v.episode, name: v.name || '' }));
+                  window._seriesCtx = { imdbId: s.imdbId, episodes: allEps, title: metaRes.meta.name };
+                  console.log(`[watch-reload] Loaded series ctx: ${allEps.length} episodes`);
+                }
+              } catch {}
+            }
             openPlayer(s.url, s.title, s.directUrl);
           });
         } catch {
