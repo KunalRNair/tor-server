@@ -143,7 +143,7 @@ rdSaveBtn.addEventListener('click', async () => {
   } catch { rdStatus.textContent = 'Could not verify.'; }
 });
 localStorage.removeItem('rd_token');
-checkRdStatus();
+const rdReady = checkRdStatus();
 
 // ═══════════════════════════════════════════
 // FILMSTRIP DRAG SCROLL
@@ -314,6 +314,12 @@ function openPlayer(url, title, directUrl) {
   playerPlayPause.innerHTML = '&#10074;&#10074;';
   showUI();
 
+  // Persist stream state for reload resilience
+  sessionStorage.setItem('turant_stream', JSON.stringify({ url, title, directUrl }));
+
+  // Auto-detect episode and set up "Next Episode" (works on reload too)
+  if (typeof autoSetupNextEp === 'function') autoSetupNextEp(title);
+
   // Push player URL to history
   const watchUrl = '/watch?title=' + encodeURIComponent(title || 'Video');
   history.pushState({ view: 'player' }, '', watchUrl);
@@ -437,6 +443,7 @@ function closePlayerInternal() {
   isFFmpegStream = false;
   streamSeekOffset = 0;
   streamDuration = 0;
+  sessionStorage.removeItem('turant_stream');
 }
 
 // Public close — goes back in history (popstate will call closePlayerInternal)

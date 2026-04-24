@@ -11,8 +11,8 @@
   <title>Turant — Search</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
-  <link rel="stylesheet" href="/css/style.css?v=23">
-  <link rel="stylesheet" href="/css/loaders.css?v=23">
+  <link rel="stylesheet" href="/css/style.css?v=24">
+  <link rel="stylesheet" href="/css/loaders.css?v=24">
   <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.10/dist/dotlottie-wc.js" type="module"></script>
 </head>
 <body>
@@ -150,9 +150,9 @@
     <div class="overlay-progress"></div>
   </div>
 
-  <script src="/js/ui.js?v=23"></script>
-  <script src="/js/api.js?v=23"></script>
-  <script src="/js/loaders.js?v=23"></script>
+  <script src="/js/ui.js?v=24"></script>
+  <script src="/js/api.js?v=24"></script>
+  <script src="/js/loaders.js?v=24"></script>
   <script>
     const input = document.getElementById('movieInput');
     const resultsSection = document.getElementById('resultsSection');
@@ -624,16 +624,31 @@
     const initPath = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
 
-    // Route: /watch — stream URLs are temporary, redirect back to detail page or search
+    // Route: /watch — resume player from sessionStorage or fall back to detail page
     if (initPath === '/watch') {
-      const returnUrl = sessionStorage.getItem('turant_detail_url');
-      window.location.replace(returnUrl || '/');
+      const savedStream = sessionStorage.getItem('turant_stream');
+      if (savedStream) {
+        try {
+          const s = JSON.parse(savedStream);
+          // Wait for RD check then resume player
+          rdReady.then(() => {
+            openPlayer(s.url, s.title, s.directUrl);
+          });
+        } catch {
+          const returnUrl = sessionStorage.getItem('turant_detail_url');
+          window.location.replace(returnUrl || '/');
+        }
+      } else {
+        const returnUrl = sessionStorage.getItem('turant_detail_url');
+        window.location.replace(returnUrl || '/');
+      }
     }
     // Route: /detail/:type/:id — load detail directly
     else if (initPath.match(/^\/detail\/(movie|series)\/([a-z]{2}\d+)$/)) {
       const detailMatch = initPath.match(/^\/detail\/(movie|series)\/([a-z]{2}\d+)$/);
       const [, detailType, detailId] = detailMatch;
-      setTimeout(async () => {
+      // Wait for RD status before rendering (so stream buttons appear)
+      rdReady.then(async () => {
         showOverlay('Loading', 'Fetching details...');
         try {
           const metaRes = await safeFetchJSON(`https://v3-cinemeta.strem.io/meta/${detailType}/${detailId}.json`);
@@ -663,7 +678,7 @@
           hideOverlay();
           resultsContent.innerHTML = `<div style="color:var(--text-muted);padding:3rem;text-align:center;font-size:0.8rem">${e.message}</div>`;
         }
-      }, 200);
+      });
     }
     // Route: /search?q=...
     else {

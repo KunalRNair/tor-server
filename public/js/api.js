@@ -416,9 +416,6 @@ async function startStream(encodedMagnet, name) {
     // Server is smart: MP4 = byte pipe (no FFmpeg), MKV = FFmpeg remux
     const proxyUrl = '/api/stream?url=' + encodeURIComponent(dl);
     openPlayer(proxyUrl, name, dl);
-
-    // Auto-detect episode and set up "Next Episode" (Netflix-style)
-    autoSetupNextEp(name);
   } catch (e) {
     console.error('[startStream] Error:', e);
     setLoadingText('Stream Error');
