@@ -317,10 +317,9 @@ async function startServer() {
         res.setHeader('Transfer-Encoding', 'chunked');
         res.setHeader('Cache-Control', 'no-cache');
 
-        // Always transcode both streams to guarantee A/V sync.
-        // -c:v copy preserves original video timestamps but re-encoded
-        // audio gets fresh timestamps → mismatch → audio drift.
-        // Transcoding both gives perfectly aligned timestamps.
+        // transcode=1 → full re-encode (guaranteed sync, heavy CPU)
+        // default → copy video + re-encode audio (fast, light CPU)
+        const fullTranscode = forceTranscode || req.query.transcode === '1';
         const ffArgs = [
           '-analyzeduration', '10000000',
           '-probesize', '10000000',
@@ -328,7 +327,9 @@ async function startServer() {
           '-i', url,
           '-movflags', 'frag_keyframe+empty_moov+faststart',
           '-f', 'mp4',
-          '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
+          ...(fullTranscode
+            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
+            : ['-c:v', 'copy']),
           '-c:a', 'aac', '-b:a', '192k',
           '-start_at_zero',
           '-fflags', '+genpts',
