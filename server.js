@@ -559,22 +559,29 @@ async function startServer() {
     const url = req.query.url;
     const track = parseInt(req.query.track) || 0;
     if (!url) return res.status(400).json({ error: 'Missing url' });
+    console.log(`[subs/extract] Track ${track} from ${url.slice(0, 60)}...`);
     try {
       res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
       res.setHeader('Access-Control-Allow-Origin', '*');
       const ff = spawn('ffmpeg', [
-        '-timeout', '10000000',     // 10s network timeout (microseconds)
+        '-analyzeduration', '3000000',
+        '-probesize', '3000000',
+        '-timeout', '15000000',
         '-i', url,
         '-map', `0:s:${track}`,
         '-f', 'webvtt',
         '-'
       ], { stdio: ['ignore', 'pipe', 'pipe'] });
       ff.stdout.pipe(res);
-      ff.stderr.on('data', () => {});  // drain stderr to prevent blocking
-      ff.on('close', () => { if (!res.writableEnded) res.end(); });
+      ff.stderr.on('data', () => {});
+      ff.on('close', (code) => {
+        console.log(`[subs/extract] FFmpeg exit code: ${code}`);
+        if (!res.writableEnded) res.end();
+      });
       req.on('close', () => ff.kill('SIGKILL'));
-      setTimeout(() => ff.kill(), 15000);
+      setTimeout(() => ff.kill(), 25000);
     } catch (e) {
+      console.error('[subs/extract] Error:', e.message);
       if (!res.headersSent) res.status(500).json({ error: e.message });
     }
   });

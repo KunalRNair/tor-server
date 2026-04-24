@@ -245,7 +245,7 @@ function openPlayer(url, title, directUrl) {
   spriteData = null;
   spriteImg = null;
 
-  // Fetch duration + embedded sub list from ffprobe (don't auto-extract — too slow on small servers)
+  // Fetch duration + embedded sub list from ffprobe
   if (directUrl) {
     fetch('/api/stream/probe?url=' + encodeURIComponent(directUrl))
       .then(r => r.json())
@@ -253,11 +253,35 @@ function openPlayer(url, title, directUrl) {
         if (d.duration > 0) streamDuration = d.duration;
         if (d.subtitles && d.subtitles.length > 0) {
           availableSubs = d.subtitles;
-          playerSubsBtn.style.display = '';
-          console.log(`[subs] Found ${d.subtitles.length} embedded tracks (not auto-loading — use CC menu)`);
+          console.log(`[subs] Found ${d.subtitles.length} embedded tracks`);
+          // Auto-extract first English embedded sub (best for anime/fansubs)
+          const engIdx = d.subtitles.findIndex(s => /eng|english/i.test(s.lang) || /eng|english/i.test(s.title));
+          const preloadIdx = engIdx >= 0 ? engIdx : 0;
+          console.log(`[subs] Auto-extracting embedded track ${preloadIdx}...`);
+          const ac = new AbortController();
+          setTimeout(() => ac.abort(), 30000); // 30s timeout for slow servers
+          fetch(`/api/stream/subs?url=${encodeURIComponent(directUrl)}&track=${preloadIdx}`, { signal: ac.signal })
+            .then(r => r.text())
+            .then(vtt => {
+              const cues = parseWebVTT(vtt);
+              if (cues.length > 0) {
+                loadedSubCues = cues;
+                activeSubTrack = preloadIdx;
+                playerSubsBtn.classList.add('active-subs');
+                console.log(`[subs] Embedded track ${preloadIdx} loaded: ${cues.length} cues`);
+              } else {
+                console.log('[subs] Embedded extraction returned 0 cues, trying OpenSubtitles');
+                searchOpenSubs(title, true);
+              }
+            })
+            .catch(err => {
+              console.warn('[subs] Embedded extraction failed:', err.name);
+              searchOpenSubs(title, true);
+            });
+        } else {
+          // No embedded subs — try OpenSubtitles
+          searchOpenSubs(title, true);
         }
-        // Search OpenSubtitles and auto-load English subs (fast + reliable)
-        searchOpenSubs(title, true);
       })
       .catch(err => { console.warn('[probe] Failed:', err); searchOpenSubs(title, true); });
   }
