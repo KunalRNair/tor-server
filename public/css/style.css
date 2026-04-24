@@ -1207,6 +1207,13 @@ body.detail-open .content { opacity: 0; pointer-events: none; }
   color: #22C55E;
   border-color: #22C55E;
 }
+#playerSubsBtn.subs-loading {
+  animation: ccPulse 1s ease-in-out infinite;
+}
+@keyframes ccPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; color: #E8A263; border-color: #E8A263; }
+}
 .player-subs-menu {
   display: none;
   position: absolute;

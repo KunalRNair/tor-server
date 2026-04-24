@@ -261,9 +261,7 @@ function openPlayer(url, title, directUrl) {
 
     // 2) Start extracting track 0 immediately — stream and parse incrementally
     console.log('[subs] Preloading embedded track 0 (parallel with probe)...');
-    const subOv = getSubOverlay();
-    subOv.textContent = 'Loading subtitles...';
-    subOv.style.display = '';
+    playerSubsBtn.classList.add('subs-loading');
     const subAc = new AbortController();
     setTimeout(() => subAc.abort(), 120000);
     (async () => {
@@ -277,34 +275,31 @@ function openPlayer(url, title, directUrl) {
         while (true) {
           const { done, value } = await reader.read();
           if (value) vttBuf += decoder.decode(value, { stream: true });
-          // Parse cues from what we have so far
           const cues = parseWebVTT(vttBuf);
           if (cues.length > lastCueCount) {
             loadedSubCues = cues;
             activeSubTrack = 0;
+            playerSubsBtn.classList.remove('subs-loading');
             playerSubsBtn.classList.add('active-subs');
-            if (lastCueCount === 0) { subOv.style.display = 'none'; }
-            subOv.textContent = `Loading subs... (${cues.length} cues)`;
             console.log(`[subs] Streaming: ${cues.length} cues so far`);
             lastCueCount = cues.length;
           }
           if (done) break;
         }
         const finalCues = parseWebVTT(vttBuf);
+        playerSubsBtn.classList.remove('subs-loading');
         if (finalCues.length > 0) {
           loadedSubCues = finalCues;
           activeSubTrack = 0;
           playerSubsBtn.classList.add('active-subs');
-          subOv.style.display = 'none';
           console.log(`[subs] Embedded track 0 complete: ${finalCues.length} cues`);
         } else {
           console.log('[subs] Embedded extraction returned 0 cues, trying OpenSubtitles');
-          subOv.style.display = 'none';
           searchOpenSubs(title, true);
         }
       } catch (err) {
         console.warn('[subs] Embedded extraction failed:', err.name);
-        subOv.style.display = 'none';
+        playerSubsBtn.classList.remove('subs-loading');
         if (loadedSubCues.length === 0) searchOpenSubs(title, true);
       }
     })();
@@ -884,18 +879,14 @@ playerSubsBtn.addEventListener('click', (e) => {
         console.log('[subs] Embedded track clicked:', i, sub.title);
         activeSubTrack = i;
         activeOpenSubId = null;
-        playerSubsBtn.classList.add('active-subs');
+        playerSubsBtn.classList.add('subs-loading');
         playerSubsMenu.classList.remove('open');
-        const ov = getSubOverlay();
-        ov.textContent = 'Loading subtitles...';
-        ov.style.display = '';
         try {
           const fetchUrl = `/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`;
           console.log('[subs] Fetching embedded:', fetchUrl.slice(0, 100));
           const ac = new AbortController();
           setTimeout(() => ac.abort(), 120000);
           const res = await fetch(fetchUrl, { signal: ac.signal });
-          console.log('[subs] Embedded response status:', res.status);
           const reader = res.body.getReader();
           const decoder = new TextDecoder();
           let vttBuf = '';
@@ -905,16 +896,16 @@ playerSubsBtn.addEventListener('click', (e) => {
             const cues = parseWebVTT(vttBuf);
             if (cues.length > 0) {
               loadedSubCues = cues;
-              ov.textContent = `Loading subs... (${cues.length})`;
-              if (cues.length > loadedSubCues.length || loadedSubCues.length === cues.length) ov.style.display = 'none';
+              playerSubsBtn.classList.remove('subs-loading');
+              playerSubsBtn.classList.add('active-subs');
             }
             if (done) break;
           }
           loadedSubCues = parseWebVTT(vttBuf);
+          playerSubsBtn.classList.remove('subs-loading');
           console.log('[subs] Embedded parsed cues:', loadedSubCues.length);
-          if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
-          else { ov.style.display = 'none'; }
-        } catch (err) { console.error('[subs] Embedded error:', err); loadedSubCues = []; ov.textContent = 'Failed to load'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
+          if (loadedSubCues.length > 0) { playerSubsBtn.classList.add('active-subs'); }
+        } catch (err) { console.error('[subs] Embedded error:', err); loadedSubCues = []; playerSubsBtn.classList.remove('subs-loading'); }
       });
       playerSubsMenu.appendChild(btn);
     });
