@@ -206,10 +206,21 @@ let currentStreamDirectUrl = '';
 let currentStreamBaseUrl = '';  // base stream URL for seeking
 let streamDuration = 0;        // total duration from ffprobe
 let loadedSubCues = [];        // parsed subtitle cues [{start, end, text}]
+let activeOpenSubId = null;    // currently active OpenSubtitles file_id
 let streamSeekOffset = 0;      // current seek offset in seconds
 let isFFmpegStream = false;    // true when playing through FFmpeg
+let playerPushedState = false; // true when we pushed a history state for the player
 
 let transcodeRetried = false;
+
+// Sprite sheet for timeline preview
+let spriteData = null;         // { cols, rows, interval, imageUrl, loaded }
+let spriteImg = null;          // loaded Image object
+
+// Next Episode (Netflix-style)
+let nextEpInfo = null;         // { label, onPlay } — set by search.html when streaming episode
+let nextEpShown = false;       // true once the overlay is shown for this playback
+let nextEpCountdown = null;    // interval for countdown timer
 
 function openPlayer(url, title, directUrl) {
   playerTitle.textContent = title || '';
@@ -217,27 +228,39 @@ function openPlayer(url, title, directUrl) {
   currentStreamBaseUrl = url;
   streamSeekOffset = 0;
   streamDuration = 0;
+  nextEpShown = false;
+  clearInterval(nextEpCountdown);
   isFFmpegStream = url.includes('/api/stream?url=') && (directUrl || '').toLowerCase().includes('.mkv');
   transcodeRetried = false;
 
-  // Reset subs
+  // Reset subs + sprites
   availableSubs = [];
   activeSubTrack = -1;
+  activeOpenSubId = null;
+  openSubResults = [];
   loadedSubCues = [];
   playerSubsBtn.style.display = 'none';
   playerSubsMenu.classList.remove('open');
   playerSubsBtn.classList.remove('active-subs');
+  spriteData = null;
+  spriteImg = null;
 
-  // Fetch duration + subtitles from ffprobe
+  // Fetch duration + subtitles from ffprobe, then kick off sprite generation
   if (directUrl) {
     fetch('/api/stream/probe?url=' + encodeURIComponent(directUrl))
       .then(r => r.json())
       .then(d => {
-        if (d.duration > 0) streamDuration = d.duration;
+        if (d.duration > 0) {
+          streamDuration = d.duration;
+          // Start sprite generation in background
+          loadSprites(directUrl, d.duration);
+        }
         if (d.subtitles && d.subtitles.length > 0) {
           availableSubs = d.subtitles;
           playerSubsBtn.style.display = '';
         }
+        // Also search OpenSubtitles for external subs
+        searchOpenSubs(title);
       })
       .catch(() => {});
   }
@@ -247,6 +270,12 @@ function openPlayer(url, title, directUrl) {
   document.body.style.overflow = 'hidden';
   playerPlayPause.innerHTML = '&#10074;&#10074;';
   showUI();
+
+  // Push player URL to history
+  const watchUrl = '/watch?title=' + encodeURIComponent(title || 'Video');
+  history.pushState({ view: 'player' }, '', watchUrl);
+  playerPushedState = true;
+  document.title = `Turant — ${title || 'Playing'}`;
 
   function showPlaybackError() {
     const wrap = document.getElementById('playerVideoWrap');
@@ -341,12 +370,18 @@ function openPlayer(url, title, directUrl) {
   playerVideo.addEventListener('canplay', () => hidePlayerLoader());
 }
 
-function closePlayer() {
+// Internal close — DOM cleanup only, no history manipulation
+function closePlayerInternal() {
+  // Remove next-ep overlay
+  const nextEpOv = document.getElementById('nextEpOverlay');
+  if (nextEpOv) nextEpOv.remove();
+  clearInterval(nextEpCountdown);
+  nextEpShown = false;
+  nextEpInfo = null;
+
   const wrap = document.getElementById('playerVideoWrap');
-  // Clear loading overlay
   const loaderEl = wrap.querySelector('.player-loading-overlay');
   if (loaderEl) loaderEl.remove();
-  // Clear subtitle overlay
   const subOv = document.getElementById('playerSubOverlay');
   if (subOv) subOv.remove();
   loadedSubCues = [];
@@ -363,6 +398,16 @@ function closePlayer() {
   isFFmpegStream = false;
   streamSeekOffset = 0;
   streamDuration = 0;
+}
+
+// Public close — goes back in history (popstate will call closePlayerInternal)
+function closePlayer() {
+  if (playerPushedState) {
+    playerPushedState = false;
+    history.back();
+  } else {
+    closePlayerInternal();
+  }
 }
 
 document.getElementById('playerBack').addEventListener('click', closePlayer);
@@ -410,7 +455,8 @@ document.getElementById('playerFullscreen').addEventListener('click', (e) => {
 });
 
 playerVideo.addEventListener('timeupdate', () => {
-  const totalDur = isFFmpegStream && streamDuration > 0 ? streamDuration : playerVideo.duration;
+  const vidDur = playerVideo.duration;
+  const totalDur = streamDuration > 0 ? streamDuration : (isFinite(vidDur) && vidDur > 0 ? vidDur : 0);
   if (!totalDur) return;
   const actualTime = streamSeekOffset + playerVideo.currentTime;
   const pct = (actualTime / totalDur) * 100;
@@ -430,18 +476,22 @@ playerVideo.addEventListener('timeupdate', () => {
     const bufPct = (bufferedActual / totalDur) * 100;
     bufferEl.style.width = bufPct + '%';
   }
+
+  // Next Episode overlay — show in last 30 seconds
+  const remaining = totalDur - actualTime;
+  if (nextEpInfo && !nextEpShown && remaining > 0 && remaining <= 30) {
+    nextEpShown = true;
+    showNextEpOverlay(Math.ceil(remaining));
+  }
 });
 
-playerProgress.addEventListener('click', (e) => {
-  const rect = playerProgress.getBoundingClientRect();
-  const pct = (e.clientX - rect.left) / rect.width;
-
+// Seek to percentage helper
+function seekToPercent(pct) {
+  pct = Math.max(0, Math.min(1, pct));
   if (isFFmpegStream && streamDuration > 0) {
-    // Server-side seek: reload stream with ?start=X
     const seekTo = pct * streamDuration;
     streamSeekOffset = seekTo;
     let seekUrl = currentStreamBaseUrl;
-    // Add start param
     const sep = seekUrl.includes('?') ? '&' : '?';
     seekUrl += sep + 'start=' + seekTo.toFixed(1);
     if (transcodeRetried) seekUrl += '&transcode=1';
@@ -449,8 +499,67 @@ playerProgress.addEventListener('click', (e) => {
     playerVideo.load();
     playerVideo.play().catch(() => {});
   } else {
-    playerVideo.currentTime = pct * playerVideo.duration;
+    const dur = streamDuration > 0 ? streamDuration : playerVideo.duration;
+    if (dur && isFinite(dur)) playerVideo.currentTime = pct * dur;
   }
+}
+
+// Progress bar — click + drag (mouse & touch)
+let progressDragging = false;
+
+function getProgressPct(clientX) {
+  const rect = playerProgress.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+}
+
+function updateProgressVisual(pct) {
+  playerProgressFill.style.width = (pct * 100) + '%';
+  const vidDur = playerVideo.duration;
+  const totalDur = streamDuration > 0 ? streamDuration : (isFinite(vidDur) && vidDur > 0 ? vidDur : 0);
+  if (totalDur) playerTime.textContent = `${fmtTime(pct * totalDur)} / ${fmtTime(totalDur)}`;
+}
+
+playerProgress.addEventListener('mousedown', (e) => {
+  e.preventDefault();
+  progressDragging = true;
+  const pct = getProgressPct(e.clientX);
+  updateProgressVisual(pct);
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (!progressDragging) return;
+  e.preventDefault();
+  const pct = getProgressPct(e.clientX);
+  updateProgressVisual(pct);
+});
+
+document.addEventListener('mouseup', (e) => {
+  if (!progressDragging) return;
+  progressDragging = false;
+  const pct = getProgressPct(e.clientX);
+  seekToPercent(pct);
+});
+
+// Touch support for mobile
+playerProgress.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  progressDragging = true;
+  const pct = getProgressPct(e.touches[0].clientX);
+  updateProgressVisual(pct);
+}, { passive: false });
+
+document.addEventListener('touchmove', (e) => {
+  if (!progressDragging) return;
+  const pct = getProgressPct(e.touches[0].clientX);
+  updateProgressVisual(pct);
+}, { passive: true });
+
+document.addEventListener('touchend', (e) => {
+  if (!progressDragging) return;
+  progressDragging = false;
+  const lastTouch = e.changedTouches[0];
+  const pct = getProgressPct(lastTouch.clientX);
+  seekToPercent(pct);
 });
 
 playerVideo.addEventListener('pause', () => {
@@ -477,6 +586,29 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'f') { document.getElementById('playerFullscreen').click(); }
   if (e.key === 'c') { playerSubsBtn.click(); }
 });
+
+// ═══════════════════════════════════════════
+// OPENSUBTITLES — external subs search
+// ═══════════════════════════════════════════
+let openSubResults = []; // [{id, lang, url}]
+
+function searchOpenSubs(title) {
+  // Need IMDB ID — check series context or editorial detail
+  const imdbId = window._seriesCtx?.imdbId || window._currentImdbId || '';
+  if (!imdbId) return;
+  const type = window._currentType || (window._seriesCtx ? 'series' : 'movie');
+
+  fetch(`/api/subs/search?imdb=${encodeURIComponent(imdbId)}&type=${type}`)
+    .then(r => r.json())
+    .then(subs => {
+      if (Array.isArray(subs) && subs.length > 0) {
+        openSubResults = subs;
+        playerSubsBtn.style.display = '';
+        console.log(`Found ${subs.length} external subtitles for ${imdbId}`);
+      }
+    })
+    .catch(() => {});
+}
 
 // ═══════════════════════════════════════════
 // SUBTITLE TOGGLE
@@ -557,6 +689,13 @@ playerSubsBtn.addEventListener('click', (e) => {
     });
     playerSubsMenu.appendChild(offBtn);
 
+    // Embedded subtitle tracks
+    if (availableSubs.length > 0) {
+      const embLabel = document.createElement('div');
+      embLabel.className = 'player-subs-label';
+      embLabel.textContent = 'Embedded';
+      playerSubsMenu.appendChild(embLabel);
+    }
     availableSubs.forEach((sub, i) => {
       const btn = document.createElement('button');
       btn.className = 'player-subs-option' + (activeSubTrack === i ? ' active-sub' : '');
@@ -564,11 +703,38 @@ playerSubsBtn.addEventListener('click', (e) => {
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
         activeSubTrack = i;
+        activeOpenSubId = null;
         playerSubsBtn.classList.add('active-subs');
         playerSubsMenu.classList.remove('open');
-        // Fetch and parse subtitle
         try {
           const res = await fetch(`/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`);
+          const vtt = await res.text();
+          loadedSubCues = parseWebVTT(vtt);
+        } catch { loadedSubCues = []; }
+      });
+      playerSubsMenu.appendChild(btn);
+    });
+
+    // OpenSubtitles external tracks
+    if (openSubResults.length > 0) {
+      const extLabel = document.createElement('div');
+      extLabel.className = 'player-subs-label';
+      extLabel.textContent = 'OpenSubtitles';
+      playerSubsMenu.appendChild(extLabel);
+    }
+    openSubResults.forEach((sub) => {
+      const btn = document.createElement('button');
+      const langLabel = (sub.lang || 'en').toUpperCase().replace('ENG', 'EN').replace('HIN', 'HI');
+      btn.className = 'player-subs-option' + (activeOpenSubId === sub.id ? ' active-sub' : '');
+      btn.textContent = langLabel;
+      btn.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        activeSubTrack = -1;
+        activeOpenSubId = sub.id;
+        playerSubsBtn.classList.add('active-subs');
+        playerSubsMenu.classList.remove('open');
+        try {
+          const res = await fetch(`/api/subs/download?url=${encodeURIComponent(sub.url)}`);
           const vtt = await res.text();
           loadedSubCues = parseWebVTT(vtt);
         } catch { loadedSubCues = []; }
@@ -584,10 +750,83 @@ playerOverlay.addEventListener('click', () => {
 });
 
 // ═══════════════════════════════════════════
-// PROGRESS BAR TIME TOOLTIP
+// NEXT EPISODE OVERLAY (Netflix-style)
+// ═══════════════════════════════════════════
+function showNextEpOverlay(seconds) {
+  if (!nextEpInfo) return;
+  let existing = document.getElementById('nextEpOverlay');
+  if (existing) existing.remove();
+
+  const ov = document.createElement('div');
+  ov.id = 'nextEpOverlay';
+  ov.className = 'next-ep-overlay';
+  ov.innerHTML = `
+    <div class="next-ep-label">Next Episode</div>
+    <div class="next-ep-title">${nextEpInfo.label}</div>
+    <div class="next-ep-actions">
+      <button class="next-ep-play" id="nextEpPlayBtn">Play Now</button>
+      <button class="next-ep-cancel" id="nextEpCancelBtn">Cancel</button>
+    </div>
+    <div class="next-ep-countdown" id="nextEpTimer">${seconds}</div>
+  `;
+  playerOverlay.appendChild(ov);
+  requestAnimationFrame(() => ov.classList.add('visible'));
+
+  let count = seconds;
+  const timerEl = document.getElementById('nextEpTimer');
+
+  nextEpCountdown = setInterval(() => {
+    count--;
+    if (timerEl) timerEl.textContent = count;
+    if (count <= 0) {
+      clearInterval(nextEpCountdown);
+      triggerNextEp();
+    }
+  }, 1000);
+
+  document.getElementById('nextEpPlayBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearInterval(nextEpCountdown);
+    triggerNextEp();
+  });
+
+  document.getElementById('nextEpCancelBtn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearInterval(nextEpCountdown);
+    ov.classList.remove('visible');
+    setTimeout(() => ov.remove(), 300);
+  });
+}
+
+function triggerNextEp() {
+  const ov = document.getElementById('nextEpOverlay');
+  if (ov) ov.remove();
+  if (nextEpInfo && nextEpInfo.onPlay) {
+    nextEpInfo.onPlay();
+  }
+}
+
+// ═══════════════════════════════════════════
+// SPRITE SHEET LOADER
+// ═══════════════════════════════════════════
+function loadSprites(url, duration) {
+  fetch(`/api/stream/sprites?url=${encodeURIComponent(url)}&dur=${duration}`)
+    .then(r => { if (!r.ok) throw new Error(); return r.json(); })
+    .then(d => {
+      spriteData = { cols: d.cols, rows: d.rows, interval: d.interval };
+      spriteImg = new Image();
+      spriteImg.onload = () => { spriteData.loaded = true; };
+      spriteImg.src = d.image;
+    })
+    .catch(() => { spriteData = null; spriteImg = null; });
+}
+
+// ═══════════════════════════════════════════
+// PROGRESS BAR TIME TOOLTIP + THUMBNAIL PREVIEW
 // ═══════════════════════════════════════════
 playerProgress.addEventListener('mousemove', (e) => {
-  const totalDur = isFFmpegStream && streamDuration > 0 ? streamDuration : playerVideo.duration;
+  const vidDur = playerVideo.duration;
+  const totalDur = streamDuration > 0 ? streamDuration : (isFinite(vidDur) && vidDur > 0 ? vidDur : 0);
   if (!totalDur) return;
   const rect = playerProgress.getBoundingClientRect();
   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
@@ -595,12 +834,47 @@ playerProgress.addEventListener('mousemove', (e) => {
   playerTimeTooltip.textContent = fmtTime(hoverTime);
   playerTimeTooltip.classList.add('visible');
   const tooltipWidth = playerTimeTooltip.offsetWidth;
-  playerTimeTooltip.style.left = Math.max(rect.left, Math.min(rect.right - tooltipWidth, e.clientX - tooltipWidth / 2)) + 'px';
+  const tooltipLeft = Math.max(rect.left, Math.min(rect.right - tooltipWidth, e.clientX - tooltipWidth / 2));
+  playerTimeTooltip.style.left = tooltipLeft + 'px';
   playerTimeTooltip.style.top = (rect.top - 32) + 'px';
+
+  // Sprite-based thumbnail preview (instant once loaded)
+  const thumbPreview = document.getElementById('playerThumbPreview');
+  const thumbImg = document.getElementById('playerThumbImg');
+  if (thumbPreview && spriteData && spriteData.loaded && spriteImg) {
+    const frameIdx = Math.min(
+      Math.floor(hoverTime / spriteData.interval),
+      spriteData.cols * spriteData.rows - 1
+    );
+    const col = frameIdx % spriteData.cols;
+    const row = Math.floor(frameIdx / spriteData.cols);
+    const tileW = 160, tileH = 90;
+
+    if (!thumbPreview._canvas) {
+      thumbPreview._canvas = document.createElement('canvas');
+      thumbPreview._canvas.width = tileW;
+      thumbPreview._canvas.height = tileH;
+    }
+    const ctx = thumbPreview._canvas.getContext('2d');
+    ctx.drawImage(spriteImg, col * tileW, row * tileH, tileW, tileH, 0, 0, tileW, tileH);
+    thumbImg.src = thumbPreview._canvas.toDataURL('image/jpeg', 0.8);
+    thumbImg.style.width = tileW + 'px';
+    thumbImg.style.height = tileH + 'px';
+
+    const thumbWidth = tileW + 4;
+    const thumbLeft = Math.max(rect.left, Math.min(rect.right - thumbWidth, e.clientX - thumbWidth / 2));
+    thumbPreview.style.left = thumbLeft + 'px';
+    thumbPreview.style.top = (rect.top - 105) + 'px';
+    thumbPreview.classList.add('visible');
+  } else if (thumbPreview) {
+    thumbPreview.classList.remove('visible');
+  }
 });
 
 playerProgress.addEventListener('mouseleave', () => {
   playerTimeTooltip.classList.remove('visible');
+  const thumbPreview = document.getElementById('playerThumbPreview');
+  if (thumbPreview) thumbPreview.classList.remove('visible');
 });
 
 // ═══════════════════════════════════════════

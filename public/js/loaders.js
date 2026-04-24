@@ -75,7 +75,17 @@ function createSearchLoader({ query, onCancel, minDurationMs = 600 }) {
 
   el.innerHTML = `
     <div class="search-loader-top">
-      <div class="search-loader-brand">TURENT</div>
+      <div class="search-loader-brand">
+        <span style="font-family:'Noto Sans Devanagari',sans-serif;font-weight:500;font-size:28px;line-height:0.78;color:#fff;letter-spacing:-0.01em">तु</span>
+        <div style="display:flex;flex-direction:column;align-items:flex-start;padding-bottom:2px;gap:2px">
+          <svg style="width:14px;height:auto;display:block" viewBox="0 0 34 16" fill="none">
+            <path d="M2 2 L8 8 L2 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+            <path d="M12 2 L18 8 L12 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+            <path d="M22 2 L28 8 L22 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+          </svg>
+          <span style="font-family:'Inter',sans-serif;font-weight:500;font-size:8px;line-height:1;color:#fff;letter-spacing:0.02em">rant</span>
+        </div>
+      </div>
       <div class="search-loader-pulse"></div>
     </div>
     <div class="search-loader-query">

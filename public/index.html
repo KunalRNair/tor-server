@@ -6,17 +6,29 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#0a0a0a">
-  <title>Turent</title>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+  <title>Turant</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Noto+Sans+Devanagari:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg">
+  <link rel="stylesheet" href="/css/style.css?v=4">
   <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.10/dist/dotlottie-wc.js" type="module"></script>
 </head>
 <body>
   <div class="header">
     <div class="header-inner">
       <div class="header-top">
-        <div class="logo">Turent</div>
+        <a href="/" class="logo">
+          <span class="logo-deva">तु</span>
+          <div class="logo-right">
+            <svg class="logo-chevrons" viewBox="0 0 34 16" fill="none">
+              <path d="M2 2 L8 8 L2 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+              <path d="M12 2 L18 8 L12 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+              <path d="M22 2 L28 8 L22 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+            </svg>
+            <span class="logo-rant">rant</span>
+          </div>
+        </a>
         <button class="settings-btn" id="settingsToggle" title="Settings">&#9881;</button>
       </div>
       <div class="search-row">
@@ -91,10 +103,24 @@
       </div>
     </div>
     <div class="player-time-tooltip" id="playerTimeTooltip"></div>
+    <div class="player-thumb-preview" id="playerThumbPreview">
+      <img id="playerThumbImg" src="" alt="">
+    </div>
   </div>
 
   <div class="overlay" id="loadingOverlay">
     <div class="overlay-counter" id="overlayCounter">00:00</div>
+    <div class="overlay-logo">
+      <span class="logo-deva" style="font-size:48px;line-height:0.85">तु</span>
+      <div class="logo-right" style="gap:3px;padding-bottom:2px">
+        <svg style="width:24px;height:auto;display:block" viewBox="0 0 34 16" fill="none">
+          <path d="M2 2 L8 8 L2 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+          <path d="M12 2 L18 8 L12 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+          <path d="M22 2 L28 8 L22 14" stroke="#E8A263" stroke-width="2" fill="none" stroke-linejoin="miter" stroke-linecap="square"/>
+        </svg>
+        <span class="logo-rant" style="font-size:14px">rant</span>
+      </div>
+    </div>
     <div class="film-bars">
       <div class="film-bar"></div>
       <div class="film-bar"></div>
@@ -109,8 +135,8 @@
     <div class="overlay-progress"></div>
   </div>
 
-  <script src="/js/ui.js"></script>
-  <script src="/js/api.js"></script>
+  <script src="/js/ui.js?v=4"></script>
+  <script src="/js/api.js?v=4"></script>
   <script>
     const input = document.getElementById('movieInput');
     const catalogStrip = document.getElementById('catalogStrip');
@@ -230,6 +256,20 @@
 
     enableDragScroll(catalogStrip);
     loadCatalog('movie-year');
+
+    // Handle back button for player
+    window.addEventListener('popstate', (e) => {
+      if (playerOverlay.classList.contains('open')) {
+        playerPushedState = false;
+        closePlayerInternal();
+        return;
+      }
+    });
+
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
+    }
   </script>
 </body>
 </html>

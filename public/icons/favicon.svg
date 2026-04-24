@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="6" fill="#000"/>
+  <text x="16" y="20" font-family="'Noto Sans Devanagari','sans-serif'" font-weight="500" font-size="18" fill="#FFFFFF" text-anchor="middle">तु</text>
+  <g transform="translate(9,24)" stroke="#E8A263" stroke-width="1.4" fill="none" stroke-linejoin="miter" stroke-linecap="square">
+    <path d="M0 0 L3 3 L0 6"/>
+    <path d="M5 0 L8 3 L5 6"/>
+    <path d="M10 0 L13 3 L10 6"/>
+  </g>
+</svg>

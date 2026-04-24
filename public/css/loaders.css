@@ -93,12 +93,12 @@
   align-items: center;
 }
 .search-loader-brand {
-  font-family: 'Courier New', monospace;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 4px;
-  color: #E4E4E4;
-  text-transform: uppercase;
+  display: inline-flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 4px;
+  color: #fff;
+  text-transform: none;
 }
 .search-loader-pulse {
   width: 6px;

@@ -317,15 +317,22 @@ async function startServer() {
         res.setHeader('Transfer-Encoding', 'chunked');
         res.setHeader('Cache-Control', 'no-cache');
 
+        // Always transcode both streams to guarantee A/V sync.
+        // -c:v copy preserves original video timestamps but re-encoded
+        // audio gets fresh timestamps → mismatch → audio drift.
+        // Transcoding both gives perfectly aligned timestamps.
         const ffArgs = [
+          '-analyzeduration', '10000000',
+          '-probesize', '10000000',
           ...(startSec > 0 ? ['-ss', String(startSec)] : []),
           '-i', url,
           '-movflags', 'frag_keyframe+empty_moov+faststart',
           '-f', 'mp4',
-          ...(forceTranscode
-            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28']
-            : ['-c:v', 'copy']),
+          '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23',
           '-c:a', 'aac', '-b:a', '192k',
+          '-start_at_zero',
+          '-fflags', '+genpts',
+          '-avoid_negative_ts', 'make_zero',
           '-map', '0:v:0', '-map', '0:a:0',
           '-'
         ];
@@ -421,8 +428,10 @@ async function startServer() {
         try {
           const info = JSON.parse(out);
           const duration = parseFloat(info.format?.duration) || 0;
+          // Filter out bitmap-based subs (PGS, DVD) — can't convert to text WebVTT
+          const BITMAP_CODECS = ['hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'];
           const subs = (info.streams || [])
-            .filter(s => s.codec_type === 'subtitle')
+            .filter(s => s.codec_type === 'subtitle' && !BITMAP_CODECS.includes(s.codec_name))
             .map((s, i) => ({
               index: s.index,
               lang: s.tags?.language || `sub_${i}`,
@@ -434,6 +443,91 @@ async function startServer() {
       });
       setTimeout(() => ff.kill(), 15000);
     } catch { res.json({ duration: 0, subtitles: [] }); }
+  });
+
+  // ======================================================================
+  // FFmpeg thumbnail extraction — single frame for timeline preview
+  // ======================================================================
+  // ======================================================================
+  // Sprite sheet — all thumbnails in one image, generated once per stream
+  // ======================================================================
+  const spriteCache = new Map(); // key: url hash → { data, cols, rows, interval }
+  let spriteGenerating = false;
+
+  app.get('/api/stream/sprites', async (req, res) => {
+    const url = req.query.url;
+    const dur = parseFloat(req.query.dur) || 0;
+    if (!url || dur <= 0) return res.status(400).end();
+
+    // Cache check
+    const cacheKey = url.slice(-60) + ':' + Math.floor(dur);
+    if (spriteCache.has(cacheKey)) {
+      const cached = spriteCache.get(cacheKey);
+      res.setHeader('Content-Type', 'application/json');
+      res.json({ cols: cached.cols, rows: cached.rows, interval: cached.interval, image: '/api/stream/sprites/img?k=' + encodeURIComponent(cacheKey) });
+      return;
+    }
+
+    if (spriteGenerating) return res.status(429).json({ error: 'busy' });
+    spriteGenerating = true;
+
+    // Calculate interval: ~40-80 thumbnails
+    const interval = dur < 600 ? 5 : dur < 3600 ? 10 : 30;
+    const frameCount = Math.ceil(dur / interval);
+    const cols = 10;
+    const rows = Math.ceil(frameCount / cols);
+
+    try {
+      const headRes = await fetch(url, { method: 'HEAD', redirect: 'follow' });
+      const finalUrl = headRes.url || url;
+
+      const ff = spawn('ffmpeg', [
+        '-i', finalUrl,
+        '-vf', `fps=1/${interval},scale=160:90,tile=${cols}x${rows}`,
+        '-frames:v', '1',
+        '-q:v', '6',
+        '-f', 'image2',
+        '-update', '1',
+        'pipe:1'
+      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+
+      const chunks = [];
+      ff.stdout.on('data', (d) => chunks.push(d));
+      ff.stderr.on('data', () => {});
+
+      ff.on('close', (code) => {
+        spriteGenerating = false;
+        if (chunks.length > 0) {
+          const imgBuf = Buffer.concat(chunks);
+          spriteCache.set(cacheKey, { data: imgBuf, cols, rows, interval });
+          // Limit cache to 3 entries
+          if (spriteCache.size > 3) {
+            const oldest = spriteCache.keys().next().value;
+            spriteCache.delete(oldest);
+          }
+          if (!res.headersSent) {
+            res.json({ cols, rows, interval, image: '/api/stream/sprites/img?k=' + encodeURIComponent(cacheKey) });
+          }
+        } else {
+          if (!res.headersSent) res.status(500).json({ error: 'generation failed' });
+        }
+      });
+      req.on('close', () => ff.kill('SIGKILL'));
+      setTimeout(() => ff.kill(), 120000); // 2 min max
+    } catch {
+      spriteGenerating = false;
+      if (!res.headersSent) res.status(500).end();
+    }
+  });
+
+  // Serve cached sprite image
+  app.get('/api/stream/sprites/img', (req, res) => {
+    const k = req.query.k;
+    const cached = spriteCache.get(k);
+    if (!cached) return res.status(404).end();
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.end(cached.data);
   });
 
   // Extract subtitle track as WebVTT
@@ -454,6 +548,54 @@ async function startServer() {
       ff.on('close', () => { if (!res.writableEnded) res.end(); });
       req.on('close', () => ff.kill('SIGKILL'));
       setTimeout(() => ff.kill(), 30000);
+    } catch (e) {
+      if (!res.headersSent) res.status(500).json({ error: e.message });
+    }
+  });
+
+  // ======================================================================
+  // Subtitle search via Stremio OpenSubtitles addon (free, no auth)
+  // ======================================================================
+  app.get('/api/subs/search', async (req, res) => {
+    const { imdb, type } = req.query;
+    if (!imdb) return res.json([]);
+    try {
+      const t = type || 'movie';
+      const r = await fetch(`https://opensubtitles-v3.strem.io/subtitles/${t}/${imdb}.json`);
+      const data = await r.json();
+      // Group by language, take top results
+      // Deduplicate: one sub per language, prefer first (highest rated)
+      const seen = new Set();
+      const subs = [];
+      for (const s of (data.subtitles || [])) {
+        if (!s.lang || !s.url) continue;
+        if (seen.has(s.lang)) continue;
+        seen.add(s.lang);
+        subs.push({ id: s.id, lang: s.lang, url: s.url });
+      }
+      res.json(subs);
+    } catch (e) {
+      res.json([]);
+    }
+  });
+
+  // Download + convert subtitle to WebVTT (proxied to avoid CORS)
+  app.get('/api/subs/download', async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: 'Missing url' });
+    try {
+      const subRes = await fetch(url);
+      const subText = await subRes.text();
+
+      // Convert SRT to WebVTT if needed
+      let vtt = subText;
+      if (!subText.trim().startsWith('WEBVTT')) {
+        vtt = 'WEBVTT\n\n' + subText
+          .replace(/\r\n/g, '\n')
+          .replace(/(\d{2}:\d{2}:\d{2}),(\d{3})/g, '$1.$2');
+      }
+      res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+      res.send(vtt);
     } catch (e) {
       if (!res.headersSent) res.status(500).json({ error: e.message });
     }
@@ -514,6 +656,10 @@ async function startServer() {
     res.sendFile(path.join(__dirname, 'public', 'search.html'));
   });
   app.get('/detail/:type/:id', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'search.html'));
+  });
+  app.get('/watch', (req, res) => {
+    // Player URL — served by whichever page the user came from (SPA catch-all handles it)
     res.sendFile(path.join(__dirname, 'public', 'search.html'));
   });
   // Catch-all for client-side routes (SPA fallback)

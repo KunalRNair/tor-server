@@ -151,8 +151,8 @@ async function executeSearch() {
       searchMovie ? safeFetchJSON(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(cleanQ)}.json`) : null,
       searchSeries ? safeFetchJSON(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(cleanQ)}.json`) : null,
     ]);
-    const sMetas = ((seriesMeta?.metas) || []).slice(0, 2);
-    const mMetas = (reqS || cat === 'series') ? [] : ((movieMeta?.metas) || []).slice(0, 2);
+    const sMetas = ((seriesMeta?.metas) || []).slice(0, 20);
+    const mMetas = (reqS || cat === 'series') ? [] : ((movieMeta?.metas) || []).slice(0, 20);
     const allMetas = [...sMetas, ...mMetas];
 
     const fetchPromises = allMetas.map(async (meta) => {
@@ -395,9 +395,80 @@ async function startStream(encodedMagnet, name) {
     hideOverlay();
     const proxyUrl = '/api/stream?url=' + encodeURIComponent(unrestricted.download);
     openPlayer(proxyUrl, name, unrestricted.download);
+
+    // Auto-detect episode and set up "Next Episode" (Netflix-style)
+    autoSetupNextEp(name);
   } catch (e) {
     setLoadingText('Stream Error');
     setLoadingSubtext(e.message);
     setTimeout(() => hideOverlay(), 4000);
   }
+}
+
+// ═══════════════════════════════════════════
+// NEXT EPISODE — auto-detect + auto-setup
+// ═══════════════════════════════════════════
+function autoSetupNextEp(torrentName) {
+  // Try to detect current season/episode from torrent name
+  const seMatch = (torrentName || '').match(/s(\d{1,2})\s*e(\d{1,2})/i);
+  if (!seMatch) return;
+  const curS = parseInt(seMatch[1], 10);
+  const curE = parseInt(seMatch[2], 10);
+
+  // Check if we have series context (set by showEditorialDetail)
+  const ctx = window._seriesCtx;
+  if (!ctx || !ctx.episodes || ctx.episodes.length === 0) {
+    // No series context loaded — try to load it from Cinemeta via IMDB detection
+    // (best effort: parse IMDB ID from page URL)
+    const detailMatch = window.location.pathname.match(/\/detail\/series\/([a-z]{2}\d+)/);
+    if (detailMatch) {
+      loadSeriesContextAndSetup(detailMatch[1], curS, curE);
+    }
+    return;
+  }
+
+  setupNextEpFromCtx(ctx, curS, curE);
+}
+
+async function loadSeriesContextAndSetup(imdbId, curS, curE) {
+  try {
+    const metaRes = await safeFetchJSON(`https://v3-cinemeta.strem.io/meta/series/${imdbId}.json`);
+    if (!metaRes?.meta?.videos) return;
+    const videos = metaRes.meta.videos;
+    const allEps = videos.filter(v => v.season && v.episode)
+      .sort((a,b) => a.season - b.season || a.episode - b.episode)
+      .map(v => ({ season: v.season, episode: v.episode, name: v.name || '' }));
+    window._seriesCtx = { imdbId, episodes: allEps, title: metaRes.meta.name };
+    setupNextEpFromCtx(window._seriesCtx, curS, curE);
+  } catch {}
+}
+
+function setupNextEpFromCtx(ctx, curS, curE) {
+  const eps = ctx.episodes;
+  const curIdx = eps.findIndex(e => e.season === curS && e.episode === curE);
+  if (curIdx < 0 || curIdx >= eps.length - 1) {
+    nextEpInfo = null;
+    return;
+  }
+  const next = eps[curIdx + 1];
+  const nextLabel = `S${String(next.season).padStart(2,'0')}E${String(next.episode).padStart(2,'0')}${next.name ? ' — ' + next.name : ''}`;
+  nextEpInfo = {
+    label: nextLabel,
+    onPlay: async () => {
+      closePlayerInternal();
+      showOverlay('Next Episode', `Loading ${nextLabel}...`);
+      try {
+        const torrents = await fetchEpisodeTorrents(ctx.imdbId, next.season, next.episode);
+        if (torrents.length === 0) throw new Error('No sources for next episode');
+        torrents.sort((a,b) => b.seeders - a.seeders);
+        const best = torrents[0];
+        hideOverlay();
+        await startStream(encodeURIComponent(best.magnet), (best.name || '').replace(/'/g, "\\'"));
+      } catch (e) {
+        setLoadingText('Error');
+        setLoadingSubtext(e.message);
+        setTimeout(() => hideOverlay(), 3000);
+      }
+    }
+  };
 }
