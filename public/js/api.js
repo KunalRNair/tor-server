@@ -394,13 +394,9 @@ async function startStream(encodedMagnet, name) {
 
     hideOverlay();
     const dl = unrestricted.download;
-    const isMKV = dl.toLowerCase().includes('.mkv');
-    // MP4/WebM: play RD URL directly (no server proxy = no buffering)
-    // MKV: needs FFmpeg remux through server
-    const streamUrl = isMKV
-      ? '/api/stream?url=' + encodeURIComponent(dl)
-      : dl;
-    openPlayer(streamUrl, name, dl);
+    // Always try direct RD URL first (zero server load)
+    // FFmpeg fallback only if browser can't play the codec
+    openPlayer(dl, name, dl);
 
     // Auto-detect episode and set up "Next Episode" (Netflix-style)
     autoSetupNextEp(name);

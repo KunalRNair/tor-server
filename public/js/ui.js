@@ -245,22 +245,20 @@ function openPlayer(url, title, directUrl) {
   spriteData = null;
   spriteImg = null;
 
-  // Fetch duration + subtitles from ffprobe, then kick off sprite generation
-  if (directUrl) {
+  // Search OpenSubtitles (lightweight, no server FFmpeg needed)
+  searchOpenSubs(title);
+
+  // Only run server-side probe if playing through FFmpeg (MKV remux)
+  // For direct RD URLs, skip probe + sprites to avoid server load
+  if (directUrl && url.includes('/api/stream?url=')) {
     fetch('/api/stream/probe?url=' + encodeURIComponent(directUrl))
       .then(r => r.json())
       .then(d => {
-        if (d.duration > 0) {
-          streamDuration = d.duration;
-          // Start sprite generation in background
-          loadSprites(directUrl, d.duration);
-        }
+        if (d.duration > 0) streamDuration = d.duration;
         if (d.subtitles && d.subtitles.length > 0) {
           availableSubs = d.subtitles;
           playerSubsBtn.style.display = '';
         }
-        // Also search OpenSubtitles for external subs
-        searchOpenSubs(title);
       })
       .catch(() => {});
   }
@@ -319,23 +317,34 @@ function openPlayer(url, title, directUrl) {
 
   function tryTranscode() {
     console.log('[player] tryTranscode called, retried:', transcodeRetried, 'readyState:', playerVideo.readyState);
-    // Remux failed — retry with full transcode
-    if (!transcodeRetried && url.includes('/api/stream?url=')) {
+    // Step 1: Direct URL failed → try FFmpeg remux via server proxy
+    if (!transcodeRetried && !url.includes('/api/stream?url=') && currentStreamDirectUrl) {
       transcodeRetried = true;
-      console.log('[player] Retrying with transcode=1');
+      console.log('[player] Direct play failed, trying FFmpeg remux');
+      playerTitle.textContent = (title || '') + ' (remuxing...)';
+      showTranscodeStatus('Remuxing video... please wait');
+      const proxyUrl = '/api/stream?url=' + encodeURIComponent(currentStreamDirectUrl);
+      playerVideo.src = proxyUrl;
+      playerVideo.load();
+      playerVideo.play().catch(() => {});
+      clearTimeout(playbackCheckTimer);
+      playbackCheckTimer = setTimeout(() => {
+        if (playerVideo.readyState < 3 && playerVideo.currentTime === 0) tryTranscode();
+      }, 20000);
+      return;
+    }
+    // Step 2: Remux failed → try full transcode
+    if (transcodeRetried && currentStreamDirectUrl && !url.includes('transcode=1')) {
+      console.log('[player] Remux failed, trying full transcode');
       playerTitle.textContent = (title || '') + ' (transcoding...)';
       showTranscodeStatus('Transcoding video... please wait');
-      const transcodeUrl = url + '&transcode=1';
+      const transcodeUrl = '/api/stream?url=' + encodeURIComponent(currentStreamDirectUrl) + '&transcode=1';
       playerVideo.src = transcodeUrl;
       playerVideo.load();
       playerVideo.play().catch(() => {});
-      // New longer stall timer for transcode
       clearTimeout(playbackCheckTimer);
       playbackCheckTimer = setTimeout(() => {
-        console.log('[player] Transcode stall timeout, readyState:', playerVideo.readyState);
-        if (playerVideo.readyState < 3 && playerVideo.currentTime === 0) {
-          showPlaybackError();
-        }
+        if (playerVideo.readyState < 3 && playerVideo.currentTime === 0) showPlaybackError();
       }, 45000);
       return;
     }
