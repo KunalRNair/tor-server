@@ -131,9 +131,8 @@ async function startServer() {
 
     if (req.method === 'POST' && req.body && Object.keys(req.body).length > 0) {
       fetchOpts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      // RD expects raw form data (like curl -d), not URL-encoded values
       fetchOpts.body = Object.entries(req.body)
-        .map(([k, v]) => `${k}=${v}`)
+        .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
         .join('&');
     }
 
