@@ -725,6 +725,7 @@ playerSubsBtn.addEventListener('click', (e) => {
       btn.textContent = sub.title;
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
+        console.log('[subs] Embedded track clicked:', i, sub.title);
         activeSubTrack = i;
         activeOpenSubId = null;
         playerSubsBtn.classList.add('active-subs');
@@ -733,14 +734,19 @@ playerSubsBtn.addEventListener('click', (e) => {
         ov.textContent = 'Loading subtitles...';
         ov.style.display = '';
         try {
+          const fetchUrl = `/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`;
+          console.log('[subs] Fetching embedded:', fetchUrl.slice(0, 100));
           const ac = new AbortController();
-          setTimeout(() => ac.abort(), 12000);
-          const res = await fetch(`/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`, { signal: ac.signal });
+          setTimeout(() => ac.abort(), 15000);
+          const res = await fetch(fetchUrl, { signal: ac.signal });
+          console.log('[subs] Embedded response status:', res.status);
           const vtt = await res.text();
+          console.log('[subs] Embedded VTT length:', vtt.length, 'first 100:', vtt.slice(0, 100));
           loadedSubCues = parseWebVTT(vtt);
+          console.log('[subs] Embedded parsed cues:', loadedSubCues.length);
           if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
           else { ov.style.display = 'none'; }
-        } catch { loadedSubCues = []; ov.textContent = 'Failed to load'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
+        } catch (err) { console.error('[subs] Embedded error:', err); loadedSubCues = []; ov.textContent = 'Failed to load'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
       });
       playerSubsMenu.appendChild(btn);
     });
@@ -759,6 +765,7 @@ playerSubsBtn.addEventListener('click', (e) => {
       btn.textContent = langLabel;
       btn.addEventListener('click', async (ev) => {
         ev.stopPropagation();
+        console.log('[subs] OpenSub clicked:', sub.lang, sub.id, 'url:', sub.url?.slice(0, 80));
         activeSubTrack = -1;
         activeOpenSubId = sub.id;
         playerSubsBtn.classList.add('active-subs');
@@ -767,16 +774,20 @@ playerSubsBtn.addEventListener('click', (e) => {
         ov.textContent = 'Loading subtitles...';
         ov.style.display = '';
         try {
+          const fetchUrl = `/api/subs/download?url=${encodeURIComponent(sub.url)}`;
+          console.log('[subs] Fetching OpenSub:', fetchUrl.slice(0, 120));
           const ac = new AbortController();
-          setTimeout(() => ac.abort(), 12000);
-          const res = await fetch(`/api/subs/download?url=${encodeURIComponent(sub.url)}`, { signal: ac.signal });
+          setTimeout(() => ac.abort(), 15000);
+          const res = await fetch(fetchUrl, { signal: ac.signal });
+          console.log('[subs] OpenSub response status:', res.status, 'ok:', res.ok);
+          if (!res.ok) { throw new Error(`Server returned ${res.status}`); }
           const vtt = await res.text();
           console.log('[subs] VTT length:', vtt.length, 'first 200:', vtt.slice(0, 200));
           loadedSubCues = parseWebVTT(vtt);
           console.log('[subs] Parsed cues:', loadedSubCues.length);
           if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
-          else { ov.style.display = 'none'; }
-        } catch (err) { console.error('[subs] Error:', err); loadedSubCues = []; ov.textContent = 'Failed to load'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
+          else { ov.textContent = ''; ov.style.display = 'none'; }
+        } catch (err) { console.error('[subs] OpenSub error:', err); loadedSubCues = []; ov.textContent = 'Failed to load'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
       });
       playerSubsMenu.appendChild(btn);
     });

@@ -331,7 +331,7 @@ async function startServer() {
             ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
             : ['-c:v', 'copy']),
           '-c:a', 'aac', '-b:a', '192k',
-          '-async', '1',
+          '-af', 'aresample=async=1:first_pts=0',
           '-fflags', '+genpts+discardcorrupt',
           '-avoid_negative_ts', 'make_zero',
           '-map', '0:v:0', '-map', '0:a:0',
@@ -590,11 +590,13 @@ async function startServer() {
   app.get('/api/subs/download', async (req, res) => {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'Missing url' });
+    console.log('[subs/download] Fetching:', url.slice(0, 120));
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), 10000);
       const subRes = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
       clearTimeout(timer);
+      console.log('[subs/download] Response:', subRes.status, 'type:', subRes.headers.get('content-type'));
       if (!subRes.ok) throw new Error(`Subtitle fetch failed: ${subRes.status}`);
 
       const buf = Buffer.from(await subRes.arrayBuffer());
