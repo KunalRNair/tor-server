@@ -465,7 +465,7 @@ async function startServer() {
           res.json({ duration, subtitles: subs });
         } catch { res.json({ duration: 0, subtitles: [] }); }
       });
-      setTimeout(() => ff.kill(), 8000);
+      setTimeout(() => ff.kill(), 20000);
     } catch { res.json({ duration: 0, subtitles: [] }); }
   });
 

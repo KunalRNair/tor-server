@@ -473,23 +473,20 @@ document.getElementById('playerFullscreen').addEventListener('click', (e) => {
 
 playerVideo.addEventListener('timeupdate', () => {
   const vidDur = playerVideo.duration;
-  // For FFmpeg streams, video.duration reports fragment length (useless)
-  // Only trust streamDuration from ffprobe
+  // For FFmpeg streams, prefer ffprobe duration but fallback to video.duration
   let totalDur;
-  if (isFFmpegStream) {
-    totalDur = streamDuration > 0 ? streamDuration : 0;
+  if (streamDuration > 0) {
+    totalDur = streamDuration;
+  } else if (isFinite(vidDur) && vidDur > 0) {
+    totalDur = vidDur;
   } else {
-    totalDur = streamDuration > 0 ? streamDuration : (isFinite(vidDur) && vidDur > 0 ? vidDur : 0);
+    totalDur = 0;
   }
   const actualTime = streamSeekOffset + playerVideo.currentTime;
   if (!totalDur) {
-    // No duration from ffprobe — show elapsed time, thin progress line
     playerTime.textContent = fmtTime(actualTime);
-    playerProgressFill.style.width = '100%';
-    playerProgressFill.style.opacity = '0.3';
     return;
   }
-  playerProgressFill.style.opacity = '1';
   const pct = Math.min((actualTime / totalDur) * 100, 100);
   playerProgressFill.style.width = pct + '%';
   playerTime.textContent = `${fmtTime(actualTime)} / ${fmtTime(totalDur)}`;
