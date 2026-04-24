@@ -645,7 +645,7 @@ function getSubOverlay() {
 
 // Update subtitle display on timeupdate
 playerVideo.addEventListener('timeupdate', () => {
-  if (activeSubTrack === -1 || loadedSubCues.length === 0) {
+  if ((activeSubTrack === -1 && activeOpenSubId === null) || loadedSubCues.length === 0) {
     const ov = document.getElementById('playerSubOverlay');
     if (ov) ov.style.display = 'none';
     return;
@@ -736,10 +736,12 @@ playerSubsBtn.addEventListener('click', (e) => {
         try {
           const res = await fetch(`/api/subs/download?url=${encodeURIComponent(sub.url)}`);
           const vtt = await res.text();
+          console.log('[subs] Downloaded VTT length:', vtt.length, 'first 200 chars:', vtt.slice(0, 200));
           loadedSubCues = parseWebVTT(vtt);
+          console.log('[subs] Parsed cues:', loadedSubCues.length);
           if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
-          else { ov.style.display = 'none'; }
-        } catch { loadedSubCues = []; ov.textContent = 'Failed to load subtitles'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
+          else { ov.textContent = `Loaded ${loadedSubCues.length} cues`; setTimeout(() => { ov.style.display = 'none'; }, 1000); }
+        } catch (err) { console.error('[subs] Error:', err); loadedSubCues = []; ov.textContent = 'Failed to load subtitles'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
       });
       playerSubsMenu.appendChild(btn);
     });
