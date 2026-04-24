@@ -341,16 +341,18 @@ async function startServer() {
         // -async 1 syncs audio pts to video pts so no drift
         const fullTranscode = forceTranscode || req.query.transcode === '1';
         const ffArgs = [
-          '-analyzeduration', '10000000',
-          '-probesize', '10000000',
+          '-analyzeduration', '3000000',
+          '-probesize', '3000000',
           ...(startSec > 0 ? ['-ss', String(startSec)] : []),
           '-i', url,
           '-movflags', 'frag_keyframe+empty_moov+faststart',
+          '-frag_duration', '1000000',
           '-f', 'mp4',
           ...(fullTranscode
-            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
+            ? ['-c:v', 'libx264',  '-preset', 'ultrafast', '-crf', '28',
+               '-vf', 'scale=-2:480']
             : ['-c:v', 'copy']),
-          '-c:a', 'aac', '-b:a', '192k',
+          '-c:a', 'aac', '-b:a', '128k',
           '-af', 'aresample=async=1:first_pts=0',
           '-fflags', '+genpts+discardcorrupt',
           '-avoid_negative_ts', 'make_zero',

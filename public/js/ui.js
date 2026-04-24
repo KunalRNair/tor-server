@@ -319,9 +319,9 @@ function openPlayer(url, title, directUrl) {
     // Proxy stream failed → retry with full transcode (re-encodes both A/V)
     if (!transcodeRetried && url.includes('/api/stream?url=')) {
       transcodeRetried = true;
-      console.log('[player] Retrying with transcode=1');
-      playerTitle.textContent = (title || '') + ' (transcoding...)';
-      showTranscodeStatus('Transcoding video... please wait');
+      console.log('[player] Retrying with transcode=1 (480p)');
+      playerTitle.textContent = (title || '') + ' (transcoding 480p...)';
+      showTranscodeStatus('Transcoding to 480p... this may take a moment');
       const transcodeUrl = url + '&transcode=1';
       playerVideo.src = transcodeUrl;
       playerVideo.load();
@@ -340,13 +340,13 @@ function openPlayer(url, title, directUrl) {
     console.log('[player] onerror fired:', e, 'error code:', playerVideo.error?.code, 'msg:', playerVideo.error?.message);
     tryTranscode();
   };
-  // Stall detection — 15s for FFmpeg remux to start piping data
+  // Stall detection — 45s for FFmpeg remux (small servers are slow to start)
   playbackCheckTimer = setTimeout(() => {
-    console.log('[player] Stall timeout 15s, readyState:', playerVideo.readyState, 'currentTime:', playerVideo.currentTime);
+    console.log('[player] Stall timeout 45s, readyState:', playerVideo.readyState, 'currentTime:', playerVideo.currentTime);
     if (playerVideo.readyState < 3 && playerVideo.currentTime === 0) {
       tryTranscode();
     }
-  }, 15000);
+  }, 45000);
   showTranscodeStatus('Preparing stream...');
 
   playerVideo.addEventListener('loadeddata', () => {
