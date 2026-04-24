@@ -399,9 +399,10 @@ async function startStream(encodedMagnet, name) {
     // Auto-detect episode and set up "Next Episode" (Netflix-style)
     autoSetupNextEp(name);
   } catch (e) {
+    console.error('[startStream] Error:', e);
     setLoadingText('Stream Error');
     setLoadingSubtext(e.message);
-    setTimeout(() => hideOverlay(), 4000);
+    setTimeout(() => hideOverlay(), 6000);
   }
 }
 
