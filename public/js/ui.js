@@ -702,12 +702,14 @@ playerSubsBtn.addEventListener('click', (e) => {
         ov.textContent = 'Loading subtitles...';
         ov.style.display = '';
         try {
-          const res = await fetch(`/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`);
+          const ac = new AbortController();
+          setTimeout(() => ac.abort(), 12000);
+          const res = await fetch(`/api/stream/subs?url=${encodeURIComponent(currentStreamDirectUrl)}&track=${i}`, { signal: ac.signal });
           const vtt = await res.text();
           loadedSubCues = parseWebVTT(vtt);
           if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
           else { ov.style.display = 'none'; }
-        } catch { loadedSubCues = []; ov.textContent = 'Failed to load subtitles'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
+        } catch { loadedSubCues = []; ov.textContent = 'Failed to load'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
       });
       playerSubsMenu.appendChild(btn);
     });
@@ -734,14 +736,16 @@ playerSubsBtn.addEventListener('click', (e) => {
         ov.textContent = 'Loading subtitles...';
         ov.style.display = '';
         try {
-          const res = await fetch(`/api/subs/download?url=${encodeURIComponent(sub.url)}`);
+          const ac = new AbortController();
+          setTimeout(() => ac.abort(), 12000);
+          const res = await fetch(`/api/subs/download?url=${encodeURIComponent(sub.url)}`, { signal: ac.signal });
           const vtt = await res.text();
-          console.log('[subs] Downloaded VTT length:', vtt.length, 'first 200 chars:', vtt.slice(0, 200));
+          console.log('[subs] VTT length:', vtt.length, 'first 200:', vtt.slice(0, 200));
           loadedSubCues = parseWebVTT(vtt);
           console.log('[subs] Parsed cues:', loadedSubCues.length);
           if (loadedSubCues.length === 0) { ov.textContent = 'No subtitle data found'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
-          else { ov.textContent = `Loaded ${loadedSubCues.length} cues`; setTimeout(() => { ov.style.display = 'none'; }, 1000); }
-        } catch (err) { console.error('[subs] Error:', err); loadedSubCues = []; ov.textContent = 'Failed to load subtitles'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
+          else { ov.style.display = 'none'; }
+        } catch (err) { console.error('[subs] Error:', err); loadedSubCues = []; ov.textContent = 'Failed to load'; setTimeout(() => { ov.style.display = 'none'; }, 2000); }
       });
       playerSubsMenu.appendChild(btn);
     });

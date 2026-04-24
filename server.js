@@ -589,7 +589,10 @@ async function startServer() {
     const { url } = req.query;
     if (!url) return res.status(400).json({ error: 'Missing url' });
     try {
-      const subRes = await fetch(url, { redirect: 'follow' });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 10000);
+      const subRes = await fetch(url, { redirect: 'follow', signal: ctrl.signal });
+      clearTimeout(timer);
       if (!subRes.ok) throw new Error(`Subtitle fetch failed: ${subRes.status}`);
 
       const buf = Buffer.from(await subRes.arrayBuffer());
