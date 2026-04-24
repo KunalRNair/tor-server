@@ -585,17 +585,56 @@ document.addEventListener('keydown', (e) => {
 // ═══════════════════════════════════════════
 let openSubResults = []; // [{id, lang, url}]
 
+// Dynamic episode extraction — works for S01E01, anime (- 1120), EP5, etc.
+function extractEpisodeFromTitle(title) {
+  if (!title) return null;
+  // S01E01, S1E5, S01 E01
+  let m = title.match(/S(\d{1,2})\s*E(\d{1,4})/i);
+  if (m) return { season: parseInt(m[1]), episode: parseInt(m[2]) };
+  // EP01, Episode 5, E05 (standalone, not part of codec like x265)
+  m = title.match(/(?:^|[\s._-])(?:EP|Episode)\s*(\d{1,4})(?:[\s._\-\)]|$)/i);
+  if (m) return { season: 1, episode: parseInt(m[1]) };
+  // Anime style: " - 1120 " or " - 1120(" (e.g. [SubsPlease] One Piece - 1120 (1080p))
+  m = title.match(/\s-\s(\d{2,4})(?:[\s(._]|$)/);
+  if (m) return { season: 1, episode: parseInt(m[1]) };
+  // Standalone E followed by digits (but not x264/x265/h264 etc)
+  m = title.match(/(?:^|[\s._-])E(\d{1,4})(?:[\s._\-\)]|$)/i);
+  if (m && !/x\d|h\d/i.test(title.slice(Math.max(0, m.index - 2), m.index + m[0].length + 2))) {
+    return { season: 1, episode: parseInt(m[1]) };
+  }
+  return null;
+}
+
+// Cross-reference with series context to get correct season
+function resolveEpisode(title) {
+  const parsed = extractEpisodeFromTitle(title);
+  if (!parsed) return null;
+  const ctx = window._seriesCtx;
+  if (ctx && ctx.episodes && ctx.episodes.length > 0) {
+    // Try exact season+episode match
+    const exact = ctx.episodes.find(e => e.season === parsed.season && e.episode === parsed.episode);
+    if (exact) return { season: exact.season, episode: exact.episode };
+    // For anime where season=1 but parsed episode might span seasons, search by episode number
+    const byEp = ctx.episodes.find(e => e.episode === parsed.episode);
+    if (byEp) return { season: byEp.season, episode: byEp.episode };
+  }
+  return parsed;
+}
+
 function searchOpenSubs(title, autoLoad) {
   // Need IMDB ID — check series context or editorial detail
   const imdbId = window._seriesCtx?.imdbId || window._currentImdbId || '';
   if (!imdbId) return;
   const type = window._currentType || (window._seriesCtx ? 'series' : 'movie');
 
-  // Extract season/episode from title for series-specific subs
+  // Dynamic episode extraction from torrent name
   let subUrl = `/api/subs/search?imdb=${encodeURIComponent(imdbId)}&type=${type}`;
   if (type === 'series' && title) {
-    const seMatch = title.match(/S(\d{1,2})E(\d{1,2})/i);
-    if (seMatch) subUrl += `&season=${seMatch[1]}&episode=${seMatch[2]}`;
+    const ep = resolveEpisode(title);
+    if (ep) {
+      subUrl += `&season=${ep.season}&episode=${ep.episode}`;
+      console.log(`[subs] Resolved episode: S${ep.season}E${ep.episode} from "${title.slice(0, 60)}"`);
+    }
   }
 
   fetch(subUrl)

@@ -434,11 +434,11 @@ async function startStream(encodedMagnet, name) {
 // NEXT EPISODE — auto-detect + auto-setup
 // ═══════════════════════════════════════════
 function autoSetupNextEp(torrentName) {
-  // Try to detect current season/episode from torrent name
-  const seMatch = (torrentName || '').match(/s(\d{1,2})\s*e(\d{1,2})/i);
-  if (!seMatch) return;
-  const curS = parseInt(seMatch[1], 10);
-  const curE = parseInt(seMatch[2], 10);
+  // Dynamic episode detection (uses shared extractEpisodeFromTitle from ui.js)
+  const ep = (typeof resolveEpisode === 'function') ? resolveEpisode(torrentName) : extractEpisodeFromTitle(torrentName);
+  if (!ep) return;
+  const curS = ep.season;
+  const curE = ep.episode;
 
   // Check if we have series context (set by showEditorialDetail)
   const ctx = window._seriesCtx;
