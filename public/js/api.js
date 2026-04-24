@@ -415,9 +415,10 @@ async function startStream(encodedMagnet, name) {
 
     hideOverlay();
     const dl = unrestricted.download;
-    // Always try direct RD URL first (zero server load)
-    // FFmpeg fallback only if browser can't play the codec
-    openPlayer(dl, name, dl);
+    // Route through server proxy (avoids CORS/hotlink blocks from RD)
+    // Server is smart: MP4 = byte pipe (no FFmpeg), MKV = FFmpeg remux
+    const proxyUrl = '/api/stream?url=' + encodeURIComponent(dl);
+    openPlayer(proxyUrl, name, dl);
 
     // Auto-detect episode and set up "Next Episode" (Netflix-style)
     autoSetupNextEp(name);
