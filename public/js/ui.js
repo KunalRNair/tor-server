@@ -254,6 +254,23 @@ function openPlayer(url, title, directUrl) {
         if (d.subtitles && d.subtitles.length > 0) {
           availableSubs = d.subtitles;
           playerSubsBtn.style.display = '';
+          // Auto-preload first English embedded sub
+          const engIdx = d.subtitles.findIndex(s => /eng|english/i.test(s.lang) || /eng|english/i.test(s.title));
+          const preloadIdx = engIdx >= 0 ? engIdx : 0;
+          const ac = new AbortController();
+          setTimeout(() => ac.abort(), 15000);
+          fetch(`/api/stream/subs?url=${encodeURIComponent(directUrl)}&track=${preloadIdx}`, { signal: ac.signal })
+            .then(r => r.text())
+            .then(vtt => {
+              const cues = parseWebVTT(vtt);
+              if (cues.length > 0) {
+                loadedSubCues = cues;
+                activeSubTrack = preloadIdx;
+                playerSubsBtn.classList.add('active-subs');
+                console.log(`[subs] Auto-loaded embedded track ${preloadIdx}: ${cues.length} cues`);
+              }
+            })
+            .catch(() => {});
         }
         // Also search OpenSubtitles for external subs
         searchOpenSubs(title);
@@ -590,7 +607,14 @@ function searchOpenSubs(title) {
   if (!imdbId) return;
   const type = window._currentType || (window._seriesCtx ? 'series' : 'movie');
 
-  fetch(`/api/subs/search?imdb=${encodeURIComponent(imdbId)}&type=${type}`)
+  // Extract season/episode from title for series-specific subs
+  let subUrl = `/api/subs/search?imdb=${encodeURIComponent(imdbId)}&type=${type}`;
+  if (type === 'series' && title) {
+    const seMatch = title.match(/S(\d{1,2})E(\d{1,2})/i);
+    if (seMatch) subUrl += `&season=${seMatch[1]}&episode=${seMatch[2]}`;
+  }
+
+  fetch(subUrl)
     .then(r => r.json())
     .then(subs => {
       if (Array.isArray(subs) && subs.length > 0) {

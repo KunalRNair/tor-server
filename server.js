@@ -562,11 +562,13 @@ async function startServer() {
   // Subtitle search via Stremio OpenSubtitles addon (free, no auth)
   // ======================================================================
   app.get('/api/subs/search', async (req, res) => {
-    const { imdb, type } = req.query;
+    const { imdb, type, season, episode } = req.query;
     if (!imdb) return res.json([]);
     try {
       const t = type || 'movie';
-      const r = await fetch(`https://opensubtitles-v3.strem.io/subtitles/${t}/${imdb}.json`);
+      // Series needs imdb:season:episode format for correct episode subs
+      const subId = (t === 'series' && season && episode) ? `${imdb}:${season}:${episode}` : imdb;
+      const r = await fetch(`https://opensubtitles-v3.strem.io/subtitles/${t}/${subId}.json`);
       const data = await r.json();
       // Group by language, take top results
       // Deduplicate: one sub per language, prefer first (highest rated)
