@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>Turent — Search</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/loaders.css">
+  <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.10/dist/dotlottie-wc.js" type="module"></script>
+</head>
+<body>
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-top">
+        <a href="/" class="logo" style="text-decoration:none;color:var(--text)">Turent</a>
+        <button class="settings-btn" id="settingsToggle" title="Settings">&#9881;</button>
+      </div>
+      <div class="search-row">
+        <input type="text" id="movieInput" placeholder="Search movies, series, anything..." autocomplete="off">
+        <button id="searchBtn">Search</button>
+      </div>
+      <div class="filter-row">
+        <button class="cat-btn active" data-cat="all">All</button>
+        <button class="cat-btn" data-cat="movie">Movies</button>
+        <button class="cat-btn" data-cat="series">Series</button>
+        <button class="cat-btn" data-cat="porn">Adult</button>
+        <button class="cat-btn" data-cat="hentai">Hentai</button>
+      </div>
+      <div class="settings-panel" id="settingsPanel">
+        <label>Real-Debrid API Token</label>
+        <div class="rd-input-row">
+          <input type="text" id="rdTokenInput" placeholder="Paste your RD API token..." autocomplete="off">
+          <button class="save-btn" id="rdSaveBtn">Save</button>
+        </div>
+        <div class="rd-status" id="rdStatus"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="results-section active" id="resultsSection">
+      <div class="section-header">
+        <a href="/" class="back-btn" style="text-decoration:none">&larr; Home</a>
+        <div class="section-title" id="resultsTitle">Results</div>
+      </div>
+      <div id="resultsContent"></div>
+    </div>
+  </div>
+
+  <!-- Editorial detail overlay -->
+  <div class="editorial-overlay" id="editorialOverlay">
+    <div class="ed-topbar">
+      <button class="ed-back" id="edBack"><span class="ed-back-arrow">&larr;</span> Back</button>
+      <button class="ed-search-trigger" id="edSearchTrigger">Search Torrents</button>
+    </div>
+    <div class="ed-hero">
+      <img class="ed-hero-img" id="edHeroImg" src="" alt="">
+      <div class="ed-hero-title-wrap">
+        <div class="ed-hero-title" id="edHeroTitle"></div>
+      </div>
+    </div>
+    <div class="ed-meta" id="edMeta"></div>
+    <div class="ed-desc" id="edDesc"></div>
+    <div class="ed-sources" id="edSources">
+      <div class="ed-sources-title">Available Sources</div>
+      <div id="edTorrentList"></div>
+    </div>
+  </div>
+
+  <!-- Video Player -->
+  <div class="player-overlay" id="playerOverlay">
+    <div class="player-topbar">
+      <button class="player-back" id="playerBack"><span class="player-back-icon">&larr;</span> Close</button>
+      <div class="player-title" id="playerTitle"></div>
+    </div>
+    <div class="player-video-wrap" id="playerVideoWrap">
+      <video id="playerVideo" autoplay playsinline></video>
+    </div>
+    <div class="player-controls">
+      <div class="player-progress" id="playerProgress">
+        <div class="player-progress-fill" id="playerProgressFill"></div>
+      </div>
+      <div class="player-controls-row">
+        <div class="player-controls-left">
+          <button class="player-ctrl-btn" id="playerPlayPause" title="Play/Pause">&#9654;&#xFE0E;</button>
+          <button class="player-ctrl-btn" id="playerSkipBack" title="-10s" style="font-size:0.75rem;font-weight:600;letter-spacing:0.02em">-10</button>
+          <button class="player-ctrl-btn" id="playerSkipFwd" title="+10s" style="font-size:0.75rem;font-weight:600;letter-spacing:0.02em">+10</button>
+          <div class="player-volume-wrap">
+            <button class="player-ctrl-btn" id="playerMute" title="Mute">&#128264;</button>
+            <input type="range" class="player-volume" id="playerVolume" min="0" max="1" step="0.05" value="1">
+          </div>
+          <span class="player-time" id="playerTime">0:00 / 0:00</span>
+        </div>
+        <div class="player-controls-right">
+          <div class="player-subs-wrap">
+            <button class="player-ctrl-btn" id="playerSubsBtn" title="Subtitles" style="display:none;font-size:0.7rem">CC</button>
+            <div class="player-subs-menu" id="playerSubsMenu"></div>
+          </div>
+          <button class="player-ctrl-btn" id="playerFullscreen" title="Fullscreen">&#x26F6;</button>
+        </div>
+      </div>
+    </div>
+    <div class="player-time-tooltip" id="playerTimeTooltip"></div>
+  </div>
+
+  <div class="overlay" id="loadingOverlay">
+    <div class="overlay-counter" id="overlayCounter">00:00</div>
+    <div class="film-bars">
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+    </div>
+    <div class="loading-text" id="loadingText">Searching</div>
+    <div class="loading-subtext" id="loadingSubtext">Finding the best sources.</div>
+    <div class="overlay-progress"></div>
+  </div>
+
+  <script src="/js/ui.js"></script>
+  <script src="/js/api.js"></script>
+  <script src="/js/loaders.js"></script>
+  <script>
+    const input = document.getElementById('movieInput');
+    const resultsSection = document.getElementById('resultsSection');
+    const resultsContent = document.getElementById('resultsContent');
+    const resultsTitle = document.getElementById('resultsTitle');
+    const editorialOverlay = document.getElementById('editorialOverlay');
+
+    // ═══════════════════════════════════════════
+    // SEARCH LOADER — override showOverlay/hideOverlay
+    // ═══════════════════════════════════════════
+    let activeSearchLoader = null;
+    let searchAbortController = null;
+
+    const _origShowOverlay = showOverlay;
+    const _origHideOverlay = hideOverlay;
+
+    showOverlay = function(text, subtext) {
+      // Use new pirate loader for search
+      if (activeSearchLoader) activeSearchLoader.hide();
+      searchAbortController = new AbortController();
+      activeSearchLoader = createSearchLoader({
+        query: input.value.trim() || 'searching...',
+        onCancel: () => {
+          if (searchAbortController) searchAbortController.abort();
+          hideOverlay();
+        }
+      });
+      document.body.appendChild(activeSearchLoader.el);
+    };
+
+    hideOverlay = function() {
+      _origHideOverlay();
+      if (activeSearchLoader) {
+        const minWait = activeSearchLoader.minDurationMs || 600;
+        const elapsed = performance.now() - activeSearchLoader.startTime;
+        const remaining = Math.max(0, minWait - elapsed);
+        const loader = activeSearchLoader;
+        activeSearchLoader = null;
+        setTimeout(() => loader.hide(), remaining);
+      }
+    };
+
+    // ═══════════════════════════════════════════
+    // CATEGORY FILTER
+    // ═══════════════════════════════════════════
+    let activeCategory = 'all';
+    document.querySelectorAll('.cat-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.cat-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        activeCategory = b.dataset.cat;
+      });
+    });
+
+    // ═══════════════════════════════════════════
+    // SEARCH — run on this page, update URL
+    // ═══════════════════════════════════════════
+    function doSearch() {
+      const q = input.value.trim();
+      if (!q) return;
+      const cleanUrl = `/search?q=${encodeURIComponent(q)}&cat=${encodeURIComponent(activeCategory)}`;
+      history.pushState({ view: 'search', q, cat: activeCategory }, '', cleanUrl);
+      document.title = `Turent — ${q}`;
+      executeSearch();
+    }
+
+    document.getElementById('searchBtn').addEventListener('click', doSearch);
+    input.addEventListener('keypress', (e) => { if (e.key === 'Enter') doSearch(); });
+
+    // ═══════════════════════════════════════════
+    // EDITORIAL DETAIL OVERLAY
+    // ═══════════════════════════════════════════
+    let currentEditorialMeta = null;
+
+    function openEditorial(meta) {
+      currentEditorialMeta = meta;
+      const ov = editorialOverlay;
+      const heroImg = document.getElementById('edHeroImg');
+      const heroTitle = document.getElementById('edHeroTitle');
+      const edMeta = document.getElementById('edMeta');
+      const edDesc = document.getElementById('edDesc');
+      const edTorrentList = document.getElementById('edTorrentList');
+
+      heroImg.src = meta.background || meta.logo || meta.poster || '';
+      const words = (meta.name || '').toUpperCase().split(' ');
+      heroTitle.innerHTML = words.map(w => `<span>${w}&nbsp;</span>`).join('');
+
+      const type = meta.type === 'series' ? 'SERIES' : 'MOVIE';
+      const year = meta.year || '';
+      const rating = meta.imdbRating || '';
+      const genres = (meta.genres || []).slice(0, 3).join(' / ') || '';
+
+      edMeta.innerHTML = `
+        <div class="ed-meta-item"><div class="ed-meta-label">Type</div><div class="ed-meta-value">${type}</div></div>
+        <div class="ed-meta-item"><div class="ed-meta-label">Year</div><div class="ed-meta-value">${year}</div></div>
+        ${rating ? `<div class="ed-meta-item"><div class="ed-meta-label">Rating</div><div class="ed-meta-value rating">${rating}</div></div>` : ''}
+        ${genres ? `<div class="ed-meta-item"><div class="ed-meta-label">Genre</div><div class="ed-meta-value">${genres}</div></div>` : ''}
+      `;
+
+      edDesc.textContent = (meta.description || '').slice(0, 300);
+      edTorrentList.innerHTML = '<div style="color:var(--text-muted);font-size:0.75rem;padding:12px 0">Click "Search Torrents" to find sources.</div>';
+      document.getElementById('edSources').style.display = 'block';
+      document.getElementById('edSearchTrigger').style.display = '';
+
+      body_lock();
+      ov.classList.add('open');
+      ov.scrollTop = 0;
+    }
+
+    function closeEditorial() {
+      editorialOverlay.classList.remove('open');
+      body_unlock();
+      currentEditorialMeta = null;
+    }
+
+    document.getElementById('edBack').addEventListener('click', closeEditorial);
+
+    document.getElementById('edSearchTrigger').addEventListener('click', () => {
+      if (!currentEditorialMeta) return;
+      closeEditorial();
+      input.value = currentEditorialMeta.name;
+      const cat = currentEditorialMeta.type === 'series' ? 'series' : 'movie';
+      document.querySelectorAll('.cat-btn').forEach(x => x.classList.toggle('active', x.dataset.cat === cat));
+      activeCategory = cat;
+      doSearch();
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && editorialOverlay.classList.contains('open')) closeEditorial();
+    });
+
+    // ═══════════════════════════════════════════
+    // SHOW RESULTS
+    // ═══════════════════════════════════════════
+    function showGroupedResults(groups) {
+      hideOverlay();
+      resultsContent.innerHTML = '';
+      resultsTitle.textContent = `${groups.length} match${groups.length > 1 ? 'es' : ''}`;
+
+      if (groups.length === 1) {
+        showEditorialDetail(groups[0]);
+        return;
+      }
+
+      const grid = document.createElement('div');
+      grid.className = 'results-grid';
+      for (const g of groups) {
+        const card = document.createElement('div');
+        card.className = 'poster-card';
+        const m = g.meta;
+        const rating = m.imdbRating ? `<span class="star">${m.imdbRating}</span> &middot; ` : '';
+        card.innerHTML = `
+          <img src="${m.poster || ''}" alt="${m.name}" loading="lazy">
+          <div class="poster-card-info">
+            <div class="poster-card-title">${m.name}</div>
+            <div class="poster-card-meta">${rating}${m.type === 'series' ? 'Series' : 'Movie'} &middot; ${m.year || ''}</div>
+          </div>
+        `;
+        card.addEventListener('click', () => showEditorialDetail(g));
+        grid.appendChild(card);
+      }
+      resultsContent.appendChild(grid);
+      requestAnimationFrame(() => staggerReveal('.poster-card', resultsContent));
+    }
+
+    // ═══════════════════════════════════════════
+    // EDITORIAL DETAIL — for search results
+    // ═══════════════════════════════════════════
+    function showEditorialDetail(group) {
+      const m = group.meta;
+      const rdActive = hasRD();
+      const ov = editorialOverlay;
+
+      document.getElementById('edHeroImg').src = m.background || m.logo || m.poster || '';
+      const words = (m.name || '').toUpperCase().split(' ');
+      document.getElementById('edHeroTitle').innerHTML = words.map(w => `<span>${w}&nbsp;</span>`).join('');
+
+      const type = m.type === 'series' ? 'SERIES' : 'MOVIE';
+      const genres = (m.genres || []).slice(0, 3).join(' / ') || '';
+      document.getElementById('edMeta').innerHTML = `
+        <div class="ed-meta-item"><div class="ed-meta-label">Type</div><div class="ed-meta-value">${type}</div></div>
+        <div class="ed-meta-item"><div class="ed-meta-label">Year</div><div class="ed-meta-value">${m.year || ''}</div></div>
+        ${m.imdbRating ? `<div class="ed-meta-item"><div class="ed-meta-label">Rating</div><div class="ed-meta-value rating">${m.imdbRating}</div></div>` : ''}
+        ${genres ? `<div class="ed-meta-item"><div class="ed-meta-label">Genre</div><div class="ed-meta-value">${genres}</div></div>` : ''}
+      `;
+
+      document.getElementById('edDesc').textContent = (m.description || '').slice(0, 350);
+
+      const edTorrentList = document.getElementById('edTorrentList');
+      edTorrentList.innerHTML = '';
+
+      // Series: seasons → episodes accordion (lazy-loaded torrents)
+      if (group.seasons && Object.keys(group.seasons).length > 0) {
+        const seasonNums = Object.keys(group.seasons).map(Number).sort((a,b) => b - a);
+        for (const sNum of seasonNums) {
+          const eps = group.seasons[sNum];
+          const seasonDiv = document.createElement('div');
+          seasonDiv.className = 'season-group';
+          seasonDiv.innerHTML = `
+            <div class="season-header">
+              <div><span class="season-label">Season ${sNum}</span> <span class="ep-count">${eps.length} episodes</span></div>
+              <span class="chevron">&#9660;</span>
+            </div>
+            <div class="season-content"></div>
+          `;
+          const seasonHeader = seasonDiv.querySelector('.season-header');
+          const seasonContent = seasonDiv.querySelector('.season-content');
+          let seasonLoaded = false;
+
+          seasonHeader.addEventListener('click', () => {
+            seasonDiv.classList.toggle('open');
+            if (!seasonLoaded && seasonDiv.classList.contains('open')) {
+              seasonLoaded = true;
+              // Render episode rows with lazy torrent loading
+              for (const ep of eps) {
+                const epLabel = `E${String(ep.episode).padStart(2,'0')}${ep.name ? ' \u2014 ' + ep.name : ''}`;
+                const epDiv = document.createElement('div');
+                epDiv.className = 'episode-group visible';
+                epDiv.innerHTML = `
+                  <div class="episode-header">
+                    <div><span class="ep-label">${epLabel}</span> <span class="ep-count">click to load</span></div>
+                    <span class="chevron">&#9660;</span>
+                  </div>
+                  <div class="episode-content">
+                    <div class="ep-torrent-container"></div>
+                  </div>
+                `;
+                const epHeader = epDiv.querySelector('.episode-header');
+                const epCountEl = epDiv.querySelector('.ep-count');
+                const epContainer = epDiv.querySelector('.ep-torrent-container');
+                let epLoaded = false;
+                let inlineLoader = null;
+
+                epHeader.addEventListener('click', async () => {
+                  epDiv.classList.toggle('open');
+                  if (!epLoaded && epDiv.classList.contains('open')) {
+                    epLoaded = true;
+                    // Show inline pirate loader
+                    inlineLoader = createInlineLoader(`s${ep.season}e${ep.episode}`);
+                    epContainer.innerHTML = '';
+                    epContainer.appendChild(inlineLoader.el);
+
+                    const torrents = await fetchEpisodeTorrents(group.imdbId, ep.season, ep.episode);
+                    // Replace loader with results
+                    if (inlineLoader) { inlineLoader.destroy(); inlineLoader = null; }
+                    if (torrents.length > 0) {
+                      epCountEl.textContent = `${torrents.length} sources`;
+                      const list = document.createElement('div');
+                      list.className = 'torrent-list';
+                      list.innerHTML = torrents.sort((a,b) => b.seeders - a.seeders).slice(0, 10).map(t => torrentItemHTML(t, rdActive)).join('');
+                      epContainer.innerHTML = '';
+                      epContainer.appendChild(list);
+                      staggerReveal('.torrent-item', list);
+                    } else {
+                      epCountEl.textContent = 'no sources';
+                      epContainer.innerHTML = '<div style="color:var(--text-muted);font-size:0.75rem;padding:8px 0">No torrents found for this episode.</div>';
+                    }
+                  }
+                });
+                seasonContent.appendChild(epDiv);
+              }
+            }
+          });
+          edTorrentList.appendChild(seasonDiv);
+        }
+      }
+
+      // Old-style pre-loaded episodes (from specific S01E01 searches)
+      if (group.episodes && group.episodes.length > 0) {
+        for (const ep of group.episodes) {
+          const epLabel = `S${String(ep.season).padStart(2,'0')}E${String(ep.episode).padStart(2,'0')}${ep.name ? ' \u2014 ' + ep.name : ''}`;
+          const epDiv = document.createElement('div');
+          epDiv.className = 'episode-group';
+          epDiv.innerHTML = `
+            <div class="episode-header" onclick="this.parentElement.classList.toggle('open')">
+              <div><span class="ep-label">${epLabel}</span> <span class="ep-count">${ep.torrents.length} sources</span></div>
+              <span class="chevron">&#9660;</span>
+            </div>
+            <div class="episode-content">
+              <div class="torrent-list">
+                ${ep.torrents.sort((a,b) => b.seeders - a.seeders).slice(0, 10).map(t => torrentItemHTML(t, rdActive)).join('')}
+              </div>
+            </div>
+          `;
+          edTorrentList.appendChild(epDiv);
+        }
+      }
+
+      // Movie: flat torrent list
+      if (group.torrents && group.torrents.length > 0) {
+        const list = document.createElement('div');
+        list.className = 'torrent-list';
+        list.innerHTML = group.torrents.sort((a,b) => b.seeders - a.seeders).slice(0, 20).map(t => torrentItemHTML(t, rdActive)).join('');
+        edTorrentList.appendChild(list);
+      }
+
+      // Hide the "Search Torrents" button since we already have sources
+      document.getElementById('edSearchTrigger').style.display = 'none';
+
+      // Update back to use history
+      const edBack = document.getElementById('edBack');
+      edBack.onclick = () => {
+        history.back();
+      };
+
+      currentEditorialMeta = m;
+      currentEditorialGroup = group;
+      body_lock();
+      ov.classList.add('open');
+      ov.scrollTop = 0;
+
+      // Push detail URL
+      const imdbId = m.imdb_id || m.id || '';
+      if (imdbId) {
+        const detailUrl = `/detail/${m.type || 'movie'}/${imdbId}`;
+        history.pushState({ view: 'detail', type: m.type, id: imdbId }, '', detailUrl);
+        document.title = `Turent — ${m.name}`;
+      }
+
+      setTimeout(() => {
+        staggerReveal('.season-group', edTorrentList);
+        staggerReveal('.episode-group', edTorrentList);
+        staggerReveal('.torrent-item', edTorrentList);
+      }, 400);
+    }
+
+    // Flat results (adult/fallback)
+    function showFlatResults(results, query) {
+      hideOverlay();
+      resultsContent.innerHTML = '';
+      resultsTitle.textContent = `${results.length} results`;
+
+      const list = document.createElement('div');
+      list.className = 'torrent-list';
+      list.style.padding = '0 32px';
+      const rdActive = hasRD();
+      results.slice(0, 30).forEach(t => {
+        list.innerHTML += torrentItemHTML(t, rdActive);
+      });
+      resultsContent.appendChild(list);
+      requestAnimationFrame(() => staggerReveal('.torrent-item', list));
+    }
+
+    // ═══════════════════════════════════════════
+    // STATE
+    // ═══════════════════════════════════════════
+    let currentEditorialGroup = null;
+
+    // ═══════════════════════════════════════════
+    // POPSTATE — handle browser back/forward
+    // ═══════════════════════════════════════════
+    window.addEventListener('popstate', (e) => {
+      // Close editorial if open
+      if (editorialOverlay.classList.contains('open')) {
+        editorialOverlay.classList.remove('open');
+        body_unlock();
+        document.getElementById('edSearchTrigger').style.display = '';
+        return;
+      }
+      // Close player if open
+      if (playerOverlay.classList.contains('open')) {
+        closePlayer();
+        return;
+      }
+      // Handle navigation
+      const path = window.location.pathname;
+      const params = new URLSearchParams(window.location.search);
+      if (path === '/search' && params.get('q')) {
+        input.value = params.get('q');
+        activeCategory = params.get('cat') || 'all';
+        document.querySelectorAll('.cat-btn').forEach(x => x.classList.toggle('active', x.dataset.cat === activeCategory));
+        executeSearch();
+      }
+    });
+
+    // ═══════════════════════════════════════════
+    // INIT — read URL and route
+    // ═══════════════════════════════════════════
+    const initPath = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+
+    // Route: /detail/:type/:id — load detail directly
+    const detailMatch = initPath.match(/^\/detail\/(movie|series)\/([a-z]{2}\d+)$/);
+    if (detailMatch) {
+      const [, detailType, detailId] = detailMatch;
+      setTimeout(async () => {
+        showOverlay('Loading', 'Fetching details...');
+        try {
+          const metaRes = await safeFetchJSON(`https://v3-cinemeta.strem.io/meta/${detailType}/${detailId}.json`);
+          if (!metaRes?.meta) throw new Error('Not found');
+          const meta = metaRes.meta;
+          document.title = `Turent — ${meta.name}`;
+
+          if (detailType === 'series') {
+            const videos = meta.videos || [];
+            const allEps = videos.filter(v => v.season && v.episode).sort((a,b) => a.season - b.season || a.episode - b.episode);
+            const seasons = {};
+            for (const ep of allEps) {
+              if (!seasons[ep.season]) seasons[ep.season] = [];
+              seasons[ep.season].push({ season: ep.season, episode: ep.episode, name: ep.name || '' });
+            }
+            const group = { meta, seasons, imdbId: detailId, episodes: [] };
+            hideOverlay();
+            showEditorialDetail(group);
+          } else {
+            const torData = await safeFetchJSON(`${TORRENTIO_BASE}/stream/movie/${detailId}.json`);
+            const torrents = torData?.streams ? parseTorrentioStreams(torData.streams) : [];
+            const group = { meta, torrents };
+            hideOverlay();
+            showEditorialDetail(group);
+          }
+        } catch (e) {
+          hideOverlay();
+          resultsContent.innerHTML = `<div style="color:var(--text-muted);padding:3rem;text-align:center;font-size:0.8rem">${e.message}</div>`;
+        }
+      }, 200);
+    }
+    // Route: /search?q=...
+    else {
+      const initQuery = params.get('q');
+      const initCat = params.get('cat') || 'all';
+      if (initQuery) {
+        input.value = initQuery;
+        activeCategory = initCat;
+        document.querySelectorAll('.cat-btn').forEach(x => x.classList.toggle('active', x.dataset.cat === initCat));
+        document.title = `Turent — ${initQuery}`;
+        setTimeout(() => executeSearch(), 200);
+      }
+    }
+  </script>
+</body>
+</html>

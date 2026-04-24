@@ -1,22 +1,16 @@
 const path = require('path');
-const fs = require('fs');
 const os = require('os');
 const express = require('express');
+const { spawn } = require('child_process');
 
-// ── Server-side RD token storage ──
-const RD_TOKEN_FILE = path.join(__dirname, '.rd_token');
+// ── Server-side RD token ──
+let RD_TOKEN = 'EH55CYDSD2SVDT3ZRHUWDG3IGB4J3RQL6PFMJ3OF4L2WNEM5347Q';
 
-function getRdToken() {
-  try { return fs.readFileSync(RD_TOKEN_FILE, 'utf8').trim(); } catch { return ''; }
-}
+function getRdToken() { return RD_TOKEN; }
 
-function setRdToken(token) {
-  fs.writeFileSync(RD_TOKEN_FILE, token, 'utf8');
-}
+function setRdToken(token) { RD_TOKEN = token; }
 
-function clearRdToken() {
-  try { fs.unlinkSync(RD_TOKEN_FILE); } catch {}
-}
+function clearRdToken() { RD_TOKEN = ''; }
 
 async function startServer() {
   const { default: WebTorrent } = await import('webtorrent');
@@ -122,7 +116,8 @@ async function startServer() {
   // Real-Debrid API Proxy (token is server-side, no client auth needed)
   // ======================================================================
   app.all('/api/rd/{*rdPath}', async (req, res) => {
-    const rdPath = req.params.rdPath;
+    const rdPathRaw = req.params.rdPath;
+    const rdPath = Array.isArray(rdPathRaw) ? rdPathRaw.join('/') : rdPathRaw;
     if (!rdPath) return res.status(400).json({ error: 'Missing RD API path' });
 
     const token = getRdToken();
@@ -136,23 +131,331 @@ async function startServer() {
 
     if (req.method === 'POST' && req.body && Object.keys(req.body).length > 0) {
       fetchOpts.headers['Content-Type'] = 'application/x-www-form-urlencoded';
-      fetchOpts.body = new URLSearchParams(req.body).toString();
+      // RD expects raw form data (like curl -d), not URL-encoded values
+      fetchOpts.body = Object.entries(req.body)
+        .map(([k, v]) => `${k}=${v}`)
+        .join('&');
     }
 
     try {
       const rdRes = await fetch(rdUrl, fetchOpts);
-      const contentType = rdRes.headers.get('content-type') || '';
 
+      // 204 No Content — return empty success
+      if (rdRes.status === 204) {
+        return res.status(204).end();
+      }
+
+      const text = await rdRes.text();
+      if (!text) return res.status(rdRes.status).json({});
+
+      const contentType = rdRes.headers.get('content-type') || '';
       if (contentType.includes('application/json')) {
-        const data = await rdRes.json();
-        res.status(rdRes.status).json(data);
+        res.status(rdRes.status).json(JSON.parse(text));
       } else {
-        const text = await rdRes.text();
         res.status(rdRes.status).send(text);
       }
     } catch (e) {
       console.error('RD proxy error:', e.message);
       res.status(502).json({ error: 'Real-Debrid API error: ' + e.message });
+    }
+  });
+
+  // ======================================================================
+  // Catalog proxy (Cinemeta trending — handles redirects)
+  // ======================================================================
+  app.get('/api/catalog/:type/:catalogId', async (req, res) => {
+    const { type, catalogId } = req.params;
+    if (!['movie', 'series'].includes(type)) {
+      return res.status(400).json({ error: 'Invalid type' });
+    }
+    if (!['top', 'year', 'imdbRating', 'last-videos'].includes(catalogId)) {
+      return res.status(400).json({ error: 'Invalid catalog' });
+    }
+    try {
+      const cRes = await fetch(
+        `https://v3-cinemeta.strem.io/catalog/${type}/${catalogId}.json`,
+        { redirect: 'follow' }
+      );
+      const data = await cRes.json();
+      res.json(data);
+    } catch (e) {
+      console.error('Catalog error:', e.message);
+      res.status(502).json({ error: 'Catalog fetch failed' });
+    }
+  });
+
+  // ======================================================================
+  // TPB torrent search proxy (avoids CORS)
+  // ======================================================================
+  app.get('/api/search/tpb', async (req, res) => {
+    const q = req.query.q;
+    const cat = req.query.cat || '';
+    if (!q) return res.status(400).json({ error: 'Missing query' });
+    try {
+      const url = cat
+        ? `https://apibay.org/q.php?q=${encodeURIComponent(q)}&cat=${cat}`
+        : `https://apibay.org/q.php?q=${encodeURIComponent(q)}`;
+      const tpbRes = await fetch(url);
+      const data = await tpbRes.json();
+      res.json(data);
+    } catch (e) {
+      console.error('TPB search error:', e.message);
+      res.status(502).json({ error: 'Search failed: ' + e.message });
+    }
+  });
+
+  // Backward compat alias
+  app.get('/api/search/adult', async (req, res) => {
+    const q = req.query.q;
+    if (!q) return res.status(400).json({ error: 'Missing query' });
+    try {
+      const tpbRes = await fetch(
+        `https://apibay.org/q.php?q=${encodeURIComponent(q)}&cat=500`
+      );
+      const data = await tpbRes.json();
+      res.json(data);
+    } catch (e) {
+      console.error('TPB search error:', e.message);
+      res.status(502).json({ error: 'Search failed: ' + e.message });
+    }
+  });
+
+  // ======================================================================
+  // Nyaa.si search proxy (anime/hentai torrents — avoids CORS)
+  // ======================================================================
+  app.get('/api/search/nyaa', async (req, res) => {
+    const q = req.query.q;
+    if (!q) return res.status(400).json({ error: 'Missing query' });
+    try {
+      // Nyaa.si RSS feed returns XML, parse it for torrents
+      // Using the sukebei (adult) subdomain for hentai, nyaa.si for regular anime
+      const urls = [
+        `https://sukebei.nyaa.si/?page=search&q=${encodeURIComponent(q)}&f=0&c=0_0&s=seeders&o=desc`,
+      ];
+      // Nyaa doesn't have a JSON API — scrape the RSS feed instead
+      const rssUrl = `https://sukebei.nyaa.si/?page=rss&q=${encodeURIComponent(q)}&c=0_0&f=0`;
+      const rssRes = await fetch(rssUrl, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      const rssText = await rssRes.text();
+
+      // Parse RSS XML for items
+      const items = [];
+      const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+      let match;
+      while ((match = itemRegex.exec(rssText)) !== null) {
+        const block = match[1];
+        const title = (block.match(/<title><!\[CDATA\[(.*?)\]\]>/)||block.match(/<title>(.*?)<\/title>/)||[])[1] || '';
+        const link = (block.match(/<link>(.*?)<\/link>/)||[])[1] || '';
+        const seeders = (block.match(/<nyaa:seeders>(\d+)<\/nyaa:seeders>/)||[])[1] || '0';
+        const size = (block.match(/<nyaa:size>(.*?)<\/nyaa:size>/)||[])[1] || 'Unknown';
+        const hash = (block.match(/<nyaa:infoHash>([a-fA-F0-9]+)<\/nyaa:infoHash>/)||[])[1] || '';
+        if (title && hash) {
+          items.push({ name: title, hash: hash.toLowerCase(), seeders, size, magnet: `magnet:?xt=urn:btih:${hash.toLowerCase()}&dn=${encodeURIComponent(title)}` });
+        }
+      }
+      res.json(items.slice(0, 30));
+    } catch (e) {
+      console.error('Nyaa search error:', e.message);
+      res.json([]);  // Return empty instead of error so other sources still work
+    }
+  });
+
+  // ======================================================================
+  // EZTV search proxy (TV series torrents by IMDB ID — avoids CORS)
+  // ======================================================================
+  app.get('/api/search/eztv', async (req, res) => {
+    const imdb = req.query.imdb;
+    if (!imdb) return res.status(400).json({ error: 'Missing imdb' });
+    try {
+      const imdbNum = imdb.replace('tt', '');
+      const ezRes = await fetch(
+        `https://eztvx.to/api/get-torrents?imdb_id=${imdbNum}&limit=30`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } }
+      );
+      const data = await ezRes.json();
+      res.json(data);
+    } catch (e) {
+      console.error('EZTV search error:', e.message);
+      res.json({ torrents: [] });
+    }
+  });
+
+  // ======================================================================
+  // SolidTorrents search proxy (DHT index — avoids CORS)
+  // ======================================================================
+  app.get('/api/search/solid', async (req, res) => {
+    const q = req.query.q;
+    if (!q) return res.status(400).json({ error: 'Missing query' });
+    try {
+      const stRes = await fetch(
+        `https://solidtorrents.to/api/v1/search?q=${encodeURIComponent(q)}&sort=seeders`,
+        { headers: { 'User-Agent': 'Mozilla/5.0' } }
+      );
+      const data = await stRes.json();
+      res.json(data);
+    } catch (e) {
+      console.error('SolidTorrents search error:', e.message);
+      res.json({ results: [] });
+    }
+  });
+
+  // ======================================================================
+  // Stream proxy — pipes RD video URL through server to avoid CORS
+  // ======================================================================
+  app.get('/api/stream', async (req, res) => {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ error: 'Missing url' });
+    const urlLower = url.toLowerCase();
+    const isMKV = urlLower.includes('.mkv');
+    const forceTranscode = req.query.transcode === '1';
+
+    // MKV or forced transcode → pipe through FFmpeg remux/transcode
+    if (isMKV || forceTranscode) {
+      const startSec = parseFloat(req.query.start) || 0;
+      console.log('Stream+FFmpeg:', url.slice(0, 80) + '...', startSec ? `seek=${startSec}s` : '');
+      try {
+        res.setHeader('Content-Type', 'video/mp4');
+        res.setHeader('Transfer-Encoding', 'chunked');
+        res.setHeader('Cache-Control', 'no-cache');
+
+        const ffArgs = [
+          ...(startSec > 0 ? ['-ss', String(startSec)] : []),
+          '-i', url,
+          '-movflags', 'frag_keyframe+empty_moov+faststart',
+          '-f', 'mp4',
+          ...(forceTranscode
+            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28']
+            : ['-c:v', 'copy']),
+          '-c:a', 'aac', '-b:a', '192k',
+          '-map', '0:v:0', '-map', '0:a:0',
+          '-'
+        ];
+
+        const ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+        let stderrBuf = '';
+
+        ff.stderr.on('data', (d) => { stderrBuf += d.toString(); });
+
+        ff.stdout.pipe(res);
+
+        ff.on('close', (code) => {
+          if (code !== 0 && !res.writableEnded) {
+            console.error('FFmpeg exit code:', code, stderrBuf.slice(-300));
+          }
+          if (!res.writableEnded) res.end();
+        });
+
+        req.on('close', () => {
+          ff.kill('SIGKILL');
+        });
+      } catch (e) {
+        console.error('FFmpeg stream error:', e.message);
+        if (!res.headersSent) res.status(502).json({ error: 'Stream failed: ' + e.message });
+      }
+      return;
+    }
+
+    // Regular MP4/WebM — direct proxy
+    console.log('Stream proxy:', url.slice(0, 80) + '...');
+    try {
+      const headers = {};
+      if (req.headers.range) {
+        headers['Range'] = req.headers.range;
+      }
+      const upstream = await fetch(url, { headers, redirect: 'follow' });
+
+      res.status(upstream.status);
+      const fwd = ['content-length', 'content-range', 'accept-ranges'];
+      for (const h of fwd) {
+        const val = upstream.headers.get(h);
+        if (val) res.setHeader(h, val);
+      }
+
+      let ct = upstream.headers.get('content-type') || 'application/octet-stream';
+      if (urlLower.includes('.mp4') || urlLower.includes('.m4v')) {
+        ct = 'video/mp4';
+      } else if (urlLower.includes('.webm')) {
+        ct = 'video/webm';
+      } else if (ct === 'application/octet-stream' || ct === 'application/force-download') {
+        ct = 'video/mp4';
+      }
+      res.setHeader('Content-Type', ct);
+
+      if (!upstream.headers.get('accept-ranges')) {
+        res.setHeader('Accept-Ranges', 'bytes');
+      }
+
+      const reader = upstream.body.getReader();
+      const pump = async () => {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) { res.end(); break; }
+          if (!res.writableEnded) res.write(Buffer.from(value));
+        }
+      };
+      pump().catch(err => {
+        if (!/aborted|closed/i.test(err.message || '')) {
+          console.error('Stream pipe error:', err.message);
+        }
+      });
+      req.on('close', () => reader.cancel().catch(() => {}));
+    } catch (e) {
+      console.error('Stream proxy error:', e.message);
+      if (!res.headersSent) res.status(502).json({ error: 'Stream failed: ' + e.message });
+    }
+  });
+
+  // ======================================================================
+  // FFprobe — get video duration for seekable progress bar
+  // ======================================================================
+  app.get('/api/stream/probe', async (req, res) => {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ error: 'Missing url' });
+    try {
+      const ff = spawn('ffprobe', [
+        '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams',
+        '-i', url
+      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+      let out = '';
+      ff.stdout.on('data', d => { out += d.toString(); });
+      ff.on('close', () => {
+        try {
+          const info = JSON.parse(out);
+          const duration = parseFloat(info.format?.duration) || 0;
+          const subs = (info.streams || [])
+            .filter(s => s.codec_type === 'subtitle')
+            .map((s, i) => ({
+              index: s.index,
+              lang: s.tags?.language || `sub_${i}`,
+              title: s.tags?.title || s.tags?.language || `Track ${i + 1}`,
+              codec: s.codec_name
+            }));
+          res.json({ duration, subtitles: subs });
+        } catch { res.json({ duration: 0, subtitles: [] }); }
+      });
+      setTimeout(() => ff.kill(), 15000);
+    } catch { res.json({ duration: 0, subtitles: [] }); }
+  });
+
+  // Extract subtitle track as WebVTT
+  app.get('/api/stream/subs', async (req, res) => {
+    const url = req.query.url;
+    const track = parseInt(req.query.track) || 0;
+    if (!url) return res.status(400).json({ error: 'Missing url' });
+    try {
+      res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      const ff = spawn('ffmpeg', [
+        '-i', url,
+        '-map', `0:s:${track}`,
+        '-f', 'webvtt',
+        '-'
+      ], { stdio: ['ignore', 'pipe', 'pipe'] });
+      ff.stdout.pipe(res);
+      ff.on('close', () => { if (!res.writableEnded) res.end(); });
+      req.on('close', () => ff.kill('SIGKILL'));
+      setTimeout(() => ff.kill(), 30000);
+    } catch (e) {
+      if (!res.headersSent) res.status(500).json({ error: e.message });
     }
   });
 
@@ -202,6 +505,22 @@ async function startServer() {
       console.error('Download error:', e.message);
       if (!res.headersSent) res.status(504).send('Error: ' + e.message);
     }
+  });
+
+  // ======================================================================
+  // Clean URL routes — serve HTML pages for all client-side routes
+  // ======================================================================
+  app.get('/search', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'search.html'));
+  });
+  app.get('/detail/:type/:id', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'search.html'));
+  });
+  // Catch-all for client-side routes (SPA fallback)
+  app.get('/{*path}', (req, res) => {
+    // Don't intercept API or static file requests
+    if (req.path.startsWith('/api/') || req.path.includes('.')) return res.status(404).end();
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
   });
 
   app.listen(3000, () => {

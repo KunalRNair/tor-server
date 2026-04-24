@@ -5,894 +5,231 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="theme-color" content="#000000">
+  <meta name="theme-color" content="#0a0a0a">
   <title>Turent</title>
-  <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%238b5cf6' width='100' height='100' rx='20'/><text x='50' y='68' font-size='55' text-anchor='middle' fill='white'>T</text></svg>">
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <style>
-    *, *::before, *::after { box-sizing: border-box; }
-
-    :root {
-      --accent: #8b5cf6;
-      --accent-glow: rgba(139, 92, 246, 0.4);
-      --card-bg: rgba(255, 255, 255, 0.05);
-      --card-border: rgba(255, 255, 255, 0.08);
-      --text-primary: #f1f5f9;
-      --text-secondary: #94a3b8;
-      --text-muted: #64748b;
-      --safe-top: env(safe-area-inset-top, 0px);
-      --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --safe-left: env(safe-area-inset-left, 0px);
-      --safe-right: env(safe-area-inset-right, 0px);
-    }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      min-height: 100dvh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      background: #000;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      color: var(--text-primary);
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      -webkit-tap-highlight-color: transparent;
-    }
-
-    /* ── Desktop: centered glass card ── */
-    @media (min-width: 601px) {
-      body {
-        justify-content: center;
-        background: linear-gradient(135deg, #0f172a 0%, #1e1e38 100%);
-        padding: 2rem;
-      }
-      .blob {
-        position: absolute;
-        border-radius: 50%;
-        filter: blur(100px);
-        z-index: 0;
-        opacity: 0.5;
-        animation: float 10s ease-in-out infinite alternate;
-      }
-      .blob-1 { top: -100px; left: -100px; width: 400px; height: 400px; background: #ec4899; }
-      .blob-2 { bottom: -100px; right: -100px; width: 500px; height: 500px; background: #8b5cf6; animation-delay: -5s; }
-      @keyframes float {
-        0% { transform: translateY(0) scale(1); }
-        100% { transform: translateY(30px) scale(1.1); }
-      }
-      .container {
-        position: relative; z-index: 10;
-        background: var(--card-bg);
-        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-        border: 1px solid var(--card-border);
-        border-radius: 24px;
-        padding: 3rem 4rem;
-        width: 100%; max-width: 500px;
-        text-align: center;
-        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
-        transition: transform 0.3s ease;
-      }
-      .container:hover { transform: translateY(-4px); }
-      .results-container {
-        position: relative; z-index: 10;
-        background: var(--card-bg);
-        backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-        border: 1px solid var(--card-border);
-        border-radius: 24px;
-        padding: 2rem;
-        width: 100%; max-width: 600px;
-        margin-top: 2rem;
-        box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5);
-        max-height: 50vh;
-        overflow-y: auto;
-      }
-      .results-container::-webkit-scrollbar { width: 6px; }
-      .results-container::-webkit-scrollbar-track { background: transparent; }
-      .results-container::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
-      .result-item {
-        background: rgba(0,0,0,0.2);
-        border: 1px solid var(--card-border);
-        padding: 1.2rem;
-        border-radius: 14px;
-        margin-bottom: 0.75rem;
-        transition: all 0.2s ease;
-      }
-      .result-item:hover {
-        border-color: var(--accent);
-        background: rgba(0,0,0,0.35);
-      }
-      .download-btn {
-        align-self: flex-start;
-        padding: 0.6rem 1.4rem;
-        font-size: 0.9rem;
-        margin-top: 0.6rem;
-      }
-    }
-
-    /* ── Mobile: full-screen native app feel ── */
-    @media (max-width: 600px) {
-      .blob { display: none; }
-      body { justify-content: flex-start; }
-
-      .container {
-        position: sticky;
-        top: 0;
-        z-index: 50;
-        padding: calc(var(--safe-top) + 12px) 20px 14px 20px;
-        background: rgba(10, 10, 12, 0.92);
-        backdrop-filter: saturate(180%) blur(20px);
-        -webkit-backdrop-filter: saturate(180%) blur(20px);
-        border-bottom: 0.5px solid rgba(255,255,255,0.08);
-      }
-
-      .results-container {
-        padding: 6px 16px calc(var(--safe-bottom) + 16px) 16px;
-        width: 100%;
-        background: #000;
-        max-height: none;
-        overflow-y: visible;
-      }
-      .results-container h2 {
-        font-size: 1.2rem;
-        margin: 10px 0 14px 4px;
-        color: var(--text-secondary);
-        font-weight: 600;
-      }
-
-      .result-item {
-        background: #1c1c1e;
-        border: none;
-        border-radius: 14px;
-        padding: 14px 16px;
-        margin-bottom: 10px;
-        -webkit-tap-highlight-color: transparent;
-        transition: background 0.15s ease;
-      }
-      .result-item:active {
-        background: #2c2c2e;
-      }
-
-      .result-title {
-        font-size: 0.95rem;
-        line-height: 1.35;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-      }
-      .result-meta {
-        margin-top: 6px;
-        gap: 12px;
-        font-size: 0.82rem;
-      }
-      .result-meta span {
-        background: rgba(255,255,255,0.06);
-        padding: 3px 8px;
-        border-radius: 6px;
-      }
-
-      .download-btn {
-        width: 100%;
-        text-align: center;
-        padding: 13px;
-        border-radius: 12px;
-        font-size: 0.95rem;
-        font-weight: 600;
-        margin-top: 12px;
-      }
-      .download-btn:active {
-        transform: scale(0.97);
-        opacity: 0.85;
-      }
-
-      .filters {
-        opacity: 0.7;
-        font-size: 0.85rem;
-      }
-    }
-
-    /* ── Shared styles ── */
-    h1 {
-      margin: 0 0 0.3rem 0;
-      font-size: 2rem;
-      font-weight: 700;
-      background: linear-gradient(135deg, #fff 30%, #a78bfa);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-    @media (max-width: 600px) {
-      h1 { font-size: 1.8rem; text-align: left; }
-      p { text-align: left; }
-    }
-    p {
-      color: var(--text-secondary);
-      font-size: 0.95rem;
-      font-weight: 400;
-      margin: 0 0 1.5rem 0;
-    }
-
-    .search-group {
-      display: flex;
-      gap: 8px;
-    }
-
-    input[type="text"] {
-      flex: 1;
-      background: rgba(255,255,255,0.08);
-      border: 1px solid rgba(255,255,255,0.1);
-      padding: 12px 16px;
-      border-radius: 12px;
-      color: #fff;
-      font-family: inherit;
-      font-size: 16px;
-      outline: none;
-      transition: all 0.25s ease;
-    }
-    input[type="text"]::placeholder { color: var(--text-muted); }
-    input[type="text"]:focus {
-      border-color: var(--accent);
-      box-shadow: 0 0 0 3px var(--accent-glow);
-      background: rgba(255,255,255,0.12);
-    }
-
-    button {
-      background: var(--accent);
-      border: none;
-      padding: 12px 20px;
-      border-radius: 12px;
-      color: #fff;
-      font-family: inherit;
-      font-weight: 600;
-      font-size: 0.95rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      -webkit-tap-highlight-color: transparent;
-    }
-    button:hover {
-      background: #7c3aed;
-      box-shadow: 0 0 20px var(--accent-glow);
-    }
-    button:active {
-      transform: scale(0.96);
-    }
-
-    .results-container h2 {
-      margin-top: 0;
-      color: #a78bfa;
-      font-size: 1.3rem;
-    }
-    .result-item {
-      text-align: left;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-    }
-    .result-title {
-      font-weight: 600;
-      font-size: 0.95rem;
-      color: var(--text-primary);
-      line-height: 1.4;
-    }
-    .result-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      font-size: 0.82rem;
-      color: var(--text-secondary);
-    }
-
-    .filters {
-      margin-top: 10px;
-      text-align: left;
-      font-size: 0.9rem;
-      color: var(--text-secondary);
-      display: flex;
-      align-items: center;
-    }
-    .filters input[type="checkbox"] {
-      margin-right: 6px;
-      width: auto;
-      accent-color: var(--accent);
-    }
-
-    /* ── Settings Panel ── */
-    .header-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-    }
-    .settings-btn {
-      background: none;
-      border: none;
-      padding: 6px;
-      font-size: 1.4rem;
-      cursor: pointer;
-      opacity: 0.5;
-      transition: opacity 0.2s;
-      -webkit-text-fill-color: initial;
-      color: #fff;
-    }
-    .settings-btn:hover, .settings-btn:active { opacity: 1; background: none; box-shadow: none; }
-    .settings-btn.active-rd { opacity: 1; color: #4ade80; }
-
-    .settings-panel {
-      display: none;
-      margin-top: 12px;
-      padding: 14px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px;
-      text-align: left;
-    }
-    .settings-panel.open { display: block; }
-    .settings-panel label {
-      font-size: 0.82rem;
-      color: var(--text-secondary);
-      display: block;
-      margin-bottom: 6px;
-    }
-    .settings-panel .rd-input-row {
-      display: flex;
-      gap: 8px;
-    }
-    .settings-panel input[type="text"] {
-      flex: 1;
-      font-size: 14px;
-      padding: 10px 12px;
-      border-radius: 10px;
-    }
-    .settings-panel .save-btn {
-      padding: 10px 16px;
-      font-size: 0.85rem;
-      border-radius: 10px;
-    }
-    .rd-status {
-      margin-top: 8px;
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-    .rd-status.connected { color: #4ade80; }
-
-    .rd-badge {
-      display: inline-block;
-      background: #166534;
-      color: #4ade80;
-      font-size: 0.7rem;
-      font-weight: 600;
-      padding: 2px 6px;
-      border-radius: 4px;
-      margin-left: 6px;
-      vertical-align: middle;
-    }
-
-    /* ── Loading Overlay ── */
-    .overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(0, 0, 0, 0.88);
-      backdrop-filter: blur(12px);
-      -webkit-backdrop-filter: blur(12px);
-      z-index: 100;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      opacity: 0;
-      pointer-events: none;
-      transition: opacity 0.3s ease;
-    }
-    .overlay.active {
-      opacity: 1;
-      pointer-events: all;
-    }
-
-    .spinner {
-      width: 44px;
-      height: 44px;
-      border: 3px solid rgba(255,255,255,0.1);
-      border-top-color: var(--accent);
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin-bottom: 1.5rem;
-    }
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .loading-text {
-      font-size: 1.2rem;
-      font-weight: 600;
-      color: #fff;
-      margin-bottom: 0.4rem;
-    }
-    .loading-subtext {
-      color: var(--text-secondary);
-      font-size: 0.9rem;
-      max-width: 300px;
-      text-align: center;
-      line-height: 1.5;
-    }
-  </style>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/style.css">
+  <script src="https://unpkg.com/@lottiefiles/dotlottie-wc@0.9.10/dist/dotlottie-wc.js" type="module"></script>
 </head>
 <body>
-  <div class="blob blob-1"></div>
-  <div class="blob blob-2"></div>
-
-  <div class="container">
-    <div class="header-row">
-      <h1>Turent</h1>
-      <button class="settings-btn" id="settingsToggle" title="Settings">&#9881;</button>
-    </div>
-    <p>Search & Download</p>
-
-    <div class="search-group">
-      <input type="text" id="movieInput" placeholder="Type a movie name..." autocomplete="off">
-      <button id="searchBtn">Search</button>
-    </div>
-    <div class="filters">
-      <label>
-        <input type="checkbox" id="sortLatest"> Sort by Latest Release
-      </label>
-    </div>
-
-    <div class="settings-panel" id="settingsPanel">
-      <label>Real-Debrid API Token</label>
-      <div class="rd-input-row">
-        <input type="text" id="rdTokenInput" placeholder="Paste your RD API token..." autocomplete="off">
-        <button class="save-btn" id="rdSaveBtn">Save</button>
+  <div class="header">
+    <div class="header-inner">
+      <div class="header-top">
+        <div class="logo">Turent</div>
+        <button class="settings-btn" id="settingsToggle" title="Settings">&#9881;</button>
       </div>
-      <div class="rd-status" id="rdStatus"></div>
+      <div class="search-row">
+        <input type="text" id="movieInput" placeholder="Search movies, series, anything..." autocomplete="off">
+        <button id="searchBtn">Search</button>
+      </div>
+      <div class="filter-row">
+        <button class="cat-btn active" data-cat="all">All</button>
+        <button class="cat-btn" data-cat="movie">Movies</button>
+        <button class="cat-btn" data-cat="series">Series</button>
+        <button class="cat-btn" data-cat="porn">Adult</button>
+        <button class="cat-btn" data-cat="hentai">Hentai</button>
+      </div>
+      <div class="settings-panel" id="settingsPanel">
+        <label>Real-Debrid API Token</label>
+        <div class="rd-input-row">
+          <input type="text" id="rdTokenInput" placeholder="Paste your RD API token..." autocomplete="off">
+          <button class="save-btn" id="rdSaveBtn">Save</button>
+        </div>
+        <div class="rd-status" id="rdStatus"></div>
+      </div>
     </div>
   </div>
 
-  <div class="results-container" id="resultsContainer" style="display: none;">
-    <h2>Search Results</h2>
-    <div id="resultsList" class="results-list"></div>
+  <div class="content">
+    <div id="catalogSection">
+      <div class="catalog-header">
+        <div class="catalog-tabs">
+          <button class="catalog-tab active" data-catalog="movie-year">New Movies</button>
+          <button class="catalog-tab" data-catalog="series-year">New Series</button>
+          <button class="catalog-tab" data-catalog="movie-top">Popular</button>
+          <button class="catalog-tab" data-catalog="movie-imdbRating">Top Rated</button>
+        </div>
+      </div>
+      <div class="filmstrip-wrapper">
+        <div class="filmstrip" id="catalogStrip"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Player overlay (needed for streaming from catalog) -->
+  <div class="player-overlay" id="playerOverlay">
+    <div class="player-topbar">
+      <button class="player-back" id="playerBack"><span class="player-back-icon">&larr;</span> Close</button>
+      <div class="player-title" id="playerTitle"></div>
+    </div>
+    <div class="player-video-wrap" id="playerVideoWrap">
+      <video id="playerVideo" autoplay playsinline></video>
+    </div>
+    <div class="player-controls">
+      <div class="player-progress" id="playerProgress">
+        <div class="player-progress-fill" id="playerProgressFill"></div>
+      </div>
+      <div class="player-controls-row">
+        <div class="player-controls-left">
+          <button class="player-ctrl-btn" id="playerPlayPause" title="Play/Pause">&#9654;&#xFE0E;</button>
+          <button class="player-ctrl-btn" id="playerSkipBack" title="-10s" style="font-size:0.75rem;font-weight:600;letter-spacing:0.02em">-10</button>
+          <button class="player-ctrl-btn" id="playerSkipFwd" title="+10s" style="font-size:0.75rem;font-weight:600;letter-spacing:0.02em">+10</button>
+          <div class="player-volume-wrap">
+            <button class="player-ctrl-btn" id="playerMute" title="Mute">&#128264;</button>
+            <input type="range" class="player-volume" id="playerVolume" min="0" max="1" step="0.05" value="1">
+          </div>
+          <span class="player-time" id="playerTime">0:00 / 0:00</span>
+        </div>
+        <div class="player-controls-right">
+          <div class="player-subs-wrap">
+            <button class="player-ctrl-btn" id="playerSubsBtn" title="Subtitles" style="display:none;font-size:0.7rem">CC</button>
+            <div class="player-subs-menu" id="playerSubsMenu"></div>
+          </div>
+          <button class="player-ctrl-btn" id="playerFullscreen" title="Fullscreen">&#x26F6;</button>
+        </div>
+      </div>
+    </div>
+    <div class="player-time-tooltip" id="playerTimeTooltip"></div>
   </div>
 
   <div class="overlay" id="loadingOverlay">
-    <div class="spinner"></div>
-    <div class="loading-text">Finding & Downloading...</div>
-    <div class="loading-subtext">We are searching the torrent swarm and acquiring the high-quality files. Please do not close this page. Your download will start automatically on this device shortly.</div>
+    <div class="overlay-counter" id="overlayCounter">00:00</div>
+    <div class="film-bars">
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+      <div class="film-bar"></div>
+    </div>
+    <div class="loading-text" id="loadingText">Loading</div>
+    <div class="loading-subtext" id="loadingSubtext">Preparing catalog.</div>
+    <div class="overlay-progress"></div>
   </div>
 
+  <script src="/js/ui.js"></script>
+  <script src="/js/api.js"></script>
   <script>
-    const btn = document.getElementById('searchBtn');
     const input = document.getElementById('movieInput');
-    const overlay = document.getElementById('loadingOverlay');
-    const resultsContainer = document.getElementById('resultsContainer');
-    const resultsList = document.getElementById('resultsList');
+    const catalogStrip = document.getElementById('catalogStrip');
 
-    // ── Real-Debrid Settings (token stored server-side) ──
-    const settingsToggle = document.getElementById('settingsToggle');
-    const settingsPanel = document.getElementById('settingsPanel');
-    const rdTokenInput = document.getElementById('rdTokenInput');
-    const rdSaveBtn = document.getElementById('rdSaveBtn');
-    const rdStatus = document.getElementById('rdStatus');
-
-    let rdConnected = false;
-
-    async function checkRdStatus() {
-      try {
-        const res = await fetch('/api/rd-token/status');
-        const data = await res.json();
-        rdConnected = data.connected;
-        if (data.connected) {
-          settingsToggle.classList.add('active-rd');
-          rdStatus.textContent = `Connected as ${data.username} (${data.type})`;
-          rdStatus.className = 'rd-status connected';
-          rdTokenInput.value = '••••••••';
-        } else {
-          settingsToggle.classList.remove('active-rd');
-          rdStatus.textContent = '';
-          rdTokenInput.value = '';
-        }
-      } catch {
-        rdConnected = false;
-        settingsToggle.classList.remove('active-rd');
-        rdStatus.textContent = '';
-        rdTokenInput.value = '';
-      }
-    }
-
-    function hasRD() { return rdConnected; }
-
-    settingsToggle.addEventListener('click', () => {
-      settingsPanel.classList.toggle('open');
+    // ═══════════════════════════════════════════
+    // CATEGORY FILTER
+    // ═══════════════════════════════════════════
+    let activeCategory = 'all';
+    document.querySelectorAll('.cat-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        document.querySelectorAll('.cat-btn').forEach(x => x.classList.remove('active'));
+        b.classList.add('active');
+        activeCategory = b.dataset.cat;
+      });
     });
 
-    rdSaveBtn.addEventListener('click', async () => {
-      const token = rdTokenInput.value.trim();
-      if (!token || token === '••••••••') {
-        // Clear token
-        await fetch('/api/rd-token', { method: 'DELETE' });
-        rdConnected = false;
-        settingsToggle.classList.remove('active-rd');
-        rdStatus.textContent = 'Token removed.';
-        rdStatus.className = 'rd-status';
-        rdTokenInput.value = '';
-        return;
-      }
-      // Save token server-side (server verifies on status check)
-      rdStatus.textContent = 'Verifying...';
-      rdStatus.className = 'rd-status';
-      try {
-        await fetch('/api/rd-token', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token })
-        });
-        await checkRdStatus();
-        if (!rdConnected) {
-          rdStatus.textContent = 'Invalid token. Get it from real-debrid.com/apitoken';
-          rdStatus.className = 'rd-status';
-          await fetch('/api/rd-token', { method: 'DELETE' });
-        }
-      } catch {
-        rdStatus.textContent = 'Could not verify. Check your connection.';
-        rdStatus.className = 'rd-status';
-      }
+    // ═══════════════════════════════════════════
+    // SEARCH → navigate to search.html
+    // ═══════════════════════════════════════════
+    document.getElementById('searchBtn').addEventListener('click', () => {
+      const q = input.value.trim();
+      if (q) navigateToSearch(q, activeCategory);
     });
-
-    // Clean up old client-side token if any
-    localStorage.removeItem('rd_token');
-
-    // Initialize RD UI on load
-    checkRdStatus();
-
-    // ── Helper: call RD API via our proxy (no auth needed, server has token) ──
-    async function rdAPI(method, rdPath, body) {
-      const opts = { method, headers: {} };
-      if (body) {
-        opts.headers['Content-Type'] = 'application/json';
-        opts.body = JSON.stringify(body);
-      }
-      const res = await fetch('/api/rd/' + rdPath, opts);
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || `RD API error (${res.status})`);
-      }
-      const text = await res.text();
-      return text ? JSON.parse(text) : {};
-    }
-
-    const BEST_TRACKERS = [
-      'udp://tracker.opentrackr.org:1337/announce',
-      'udp://tracker.openbittorrent.com:6969/announce',
-      'udp://tracker.torrent.eu.org:451/announce',
-      'udp://tracker.moeking.me:6969/announce',
-      'udp://tracker.zer0day.to:1337/announce',
-      'udp://tracker.leechers-paradise.org:6969/announce',
-      'udp://coppersurfer.tk:6969/announce',
-      'udp://tracker.internetwarriors.net:1337/announce',
-      'wss://tracker.btorrent.xyz',
-      'wss://tracker.openwebtorrent.com',
-      'wss://tracker.fastcast.nz'
-    ];
-    const trString = BEST_TRACKERS.map(tr => '&tr=' + encodeURIComponent(tr)).join('');
-
-    // All Torrentio providers enabled for maximum coverage
-    const TORRENTIO_PROVIDERS = 'providers=yts,eztv,rarbg,1337x,thepiratebay,kickasstorrents,torrentgalaxy,magnetdl,horriblesubs,nyaasi,tokyotosho,anidex';
-    const TORRENTIO_BASE = `https://torrentio.strem.fun/${TORRENTIO_PROVIDERS}`;
-
-    // YTS mirror list for HD movie torrents
-    const YTS_DOMAINS = ['yts.mx', 'yts.rs', 'yts.do'];
-
-    // Helper: safely fetch JSON, returns null on failure (never throws)
-    async function safeFetchJSON(url, timeoutMs = 8000) {
-      try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-        const res = await fetch(url, { signal: ctrl.signal });
-        clearTimeout(timer);
-        const text = await res.text();
-        if (text.trim().startsWith('<')) return null; // Cloudflare HTML block
-        return JSON.parse(text);
-      } catch { return null; }
-    }
-
-    // Parse Torrentio stream objects into our result format
-    function parseTorrentioStreams(streams, query) {
-      const out = [];
-      for (const s of streams) {
-        if (!s.infoHash) continue;
-        let seeders = 0, size = 'Unknown';
-        if (s.title) {
-          const sm = s.title.match(/👤\s*(\d+)/);
-          if (sm) seeders = parseInt(sm[1], 10);
-          const szm = s.title.match(/💾\s*([^⚙️\n]+)/);
-          if (szm) size = szm[1].trim();
-        }
-        const cleanName = (s.title || query).split('\n')[0];
-        const trackerName = (s.name || 'Torrent').split('\n')[0];
-        out.push({
-          name: `(${trackerName}) ${cleanName}`,
-          size, seeders,
-          infoHash: s.infoHash.toLowerCase(),
-          magnet: `magnet:?xt=urn:btih:${s.infoHash}&dn=${encodeURIComponent(cleanName)}${trString}`
-        });
-      }
-      return out;
-    }
-
-    // ---------------------------------------------------------------------------
-    // CLIENT-SIDE SEARCH: All fetches run from your phone browser.
-    // Residential IP = Cloudflare never blocks. Server not involved.
-    //
-    // Sources searched (in parallel):
-    //   1. Torrentio (12 providers: 1337x, TPB, YTS, RARBG, KAT, TGx, etc.)
-    //   2. YTS API (HD movies, multiple mirrors)
-    //   3. Cinemeta searches BOTH movie + series catalogs
-    // ---------------------------------------------------------------------------
-    async function executeSearch() {
-      const query = input.value.trim();
-      if (!query) return;
-
-      overlay.classList.add('active');
-      document.querySelector('.loading-text').innerText = "Searching sources...";
-      document.querySelector('.loading-subtext').innerText = "Searching Torrentio, YTS, and more...";
-      resultsContainer.style.display = 'none';
-
-      try {
-        // Step 1: Search Cinemeta for BOTH movies and series concurrently
-        const [movieMeta, seriesMeta] = await Promise.all([
-          safeFetchJSON(`https://v3-cinemeta.strem.io/catalog/movie/top/search=${encodeURIComponent(query)}.json`),
-          safeFetchJSON(`https://v3-cinemeta.strem.io/catalog/series/top/search=${encodeURIComponent(query)}.json`),
-        ]);
-
-        // Merge all Cinemeta matches (movies + series)
-        const allMetas = [
-          ...((movieMeta && movieMeta.metas) || []),
-          ...((seriesMeta && seriesMeta.metas) || []),
-        ];
-
-        // Step 2: Fire ALL source queries in parallel
-        const torrentioPromises = [];
-
-        // For each Cinemeta match (top 3), query Torrentio with ALL providers
-        for (const meta of allMetas.slice(0, 3)) {
-          const imdbId = meta.imdb_id || meta.id;
-          if (!imdbId) continue;
-          if (meta.type === 'series') {
-            torrentioPromises.push(
-              safeFetchJSON(`${TORRENTIO_BASE}/stream/series/${imdbId}:1:1.json`)
-            );
-          } else {
-            torrentioPromises.push(
-              safeFetchJSON(`${TORRENTIO_BASE}/stream/movie/${imdbId}.json`)
-            );
-          }
-        }
-
-        // YTS API: try mirrors for HD movie results
-        const ytsPromise = (async () => {
-          for (const domain of YTS_DOMAINS) {
-            const data = await safeFetchJSON(
-              `https://${domain}/api/v2/list_movies.json?query_term=${encodeURIComponent(query)}&limit=10`,
-              5000
-            );
-            if (data && data.data && data.data.movies) return data.data.movies;
-          }
-          return [];
-        })();
-
-        // Wait for everything in parallel
-        const [ytsMovies, ...torrentioResults] = await Promise.all([
-          ytsPromise,
-          ...torrentioPromises,
-        ]);
-
-        // Step 3: Merge all results, deduplicate by infoHash
-        const seen = new Set();
-        let results = [];
-
-        const addUnique = (item) => {
-          if (seen.has(item.infoHash)) return;
-          seen.add(item.infoHash);
-          results.push(item);
-        };
-
-        // Torrentio results
-        for (const torData of torrentioResults) {
-          if (!torData || !torData.streams) continue;
-          for (const r of parseTorrentioStreams(torData.streams, query)) {
-            addUnique(r);
-          }
-        }
-
-        // YTS results
-        for (const movie of ytsMovies) {
-          if (!movie.torrents) continue;
-          for (const t of movie.torrents) {
-            const hash = (t.hash || '').toLowerCase();
-            if (!hash) continue;
-            addUnique({
-              name: `(YTS) ${movie.title} (${movie.year}) [${t.quality}]`,
-              size: t.size || 'Unknown',
-              seeders: t.seeds || 0,
-              infoHash: hash,
-              magnet: `magnet:?xt=urn:btih:${hash}&dn=${encodeURIComponent(movie.title)}${trString}`
-            });
-          }
-        }
-
-        if (results.length === 0) {
-          throw new Error("No results found. Try different keywords.");
-        }
-
-        // Sort by seeders by default (highest first = most reliable)
-        results.sort((a, b) => b.seeders - a.seeders);
-
-        // Sort by latest release year if checkbox is checked
-        const isSortLatest = document.getElementById('sortLatest').checked;
-        if (isSortLatest) {
-          results.sort((a, b) => {
-            const yearA = parseInt(a.name.match(/\((\d{4})\)/)?.[1] || 0, 10);
-            const yearB = parseInt(b.name.match(/\((\d{4})\)/)?.[1] || 0, 10);
-            return yearB - yearA;
-          });
-        }
-
-        // Render results
-        overlay.classList.remove('active');
-        resultsContainer.style.display = 'block';
-        resultsList.innerHTML = '';
-
-        const countText = results.length >= 30 ? '30+' : results.length;
-        document.querySelector('#resultsContainer h2').innerText = `${countText} Results`;
-
-        const rdActive = hasRD();
-        results.slice(0, 30).forEach(res => {
-          const item = document.createElement('div');
-          item.className = 'result-item';
-          const btnLabel = rdActive ? 'Download<span class="rd-badge">RD</span>' : 'Download';
-          item.innerHTML = `
-            <div class="result-title">${res.name}</div>
-            <div class="result-meta">
-              <span>Size: ${res.size}</span>
-              <span>Seeders: ${res.seeders}</span>
-            </div>
-            <button class="download-btn" onclick="startDownload('${encodeURIComponent(res.magnet)}', '${res.name.replace(/'/g, "\\'")}')">` + btnLabel + `</button>
-          `;
-          resultsList.appendChild(item);
-        });
-      } catch (e) {
-        document.querySelector('.loading-text').innerText = "Error Occurred";
-        document.querySelector('.loading-subtext').innerText = e.message;
-        setTimeout(() => overlay.classList.remove('active'), 4000);
-      }
-    }
-
-    // ---------------------------------------------------------------------------
-    // DOWNLOAD via Real-Debrid (if token set) or WebTorrent fallback
-    // ---------------------------------------------------------------------------
-    async function startDownload(encodedMagnet, name) {
-      const magnetUri = decodeURIComponent(encodedMagnet);
-
-      if (hasRD()) {
-        await downloadWithRD(magnetUri, name);
-      } else {
-        await downloadWithWebTorrent(encodedMagnet, name);
-      }
-    }
-
-    // ── Real-Debrid download flow ──
-    // 1. Add magnet to RD → 2. Select files → 3. Wait for cache/download → 4. Get direct link
-    async function downloadWithRD(magnetUri, name) {
-      overlay.classList.add('active');
-      document.querySelector('.loading-text').innerText = "Sending to Real-Debrid...";
-      document.querySelector('.loading-subtext').innerText = "Checking if torrent is cached on RD servers...";
-
-      try {
-        // 1. Add magnet
-        const addRes = await rdAPI('POST', 'torrents/addMagnet', { magnet: magnetUri });
-        const torrentId = addRes.id;
-        if (!torrentId) throw new Error('Real-Debrid did not return a torrent ID.');
-
-        // 2. Get file list
-        let info = await rdAPI('GET', `torrents/info/${torrentId}`);
-
-        // 3. Select the largest file
-        if (info.files && info.files.length > 0) {
-          const largest = info.files.reduce((a, b) => a.bytes > b.bytes ? a : b);
-          await rdAPI('POST', `torrents/selectFiles/${torrentId}`, { files: String(largest.id) });
-        } else {
-          // Select all if no file list yet
-          await rdAPI('POST', `torrents/selectFiles/${torrentId}`, { files: 'all' });
-        }
-
-        // 4. Poll until status = "downloaded"
-        document.querySelector('.loading-text').innerText = "Real-Debrid processing...";
-        let status = '';
-        let progress = 0;
-        for (let i = 0; i < 60; i++) { // max 2 min polling
-          info = await rdAPI('GET', `torrents/info/${torrentId}`);
-          status = info.status;
-          progress = info.progress || 0;
-
-          if (status === 'downloaded') break;
-          if (status === 'error' || status === 'dead' || status === 'virus' || status === 'magnet_error') {
-            throw new Error(`Real-Debrid error: ${status}. Try another torrent.`);
-          }
-
-          document.querySelector('.loading-subtext').innerText =
-            status === 'magnet_conversion' ? 'Converting magnet...' :
-            status === 'waiting_files_selection' ? 'Selecting files...' :
-            status === 'downloading' ? `Downloading on RD: ${progress}%` :
-            `Status: ${status} (${progress}%)`;
-
-          await new Promise(r => setTimeout(r, 2000));
-        }
-
-        if (status !== 'downloaded') {
-          throw new Error('Real-Debrid is still downloading. Try again in a minute.');
-        }
-
-        // 5. Get the download link(s) and unrestrict
-        if (!info.links || info.links.length === 0) {
-          throw new Error('No download links returned by Real-Debrid.');
-        }
-
-        document.querySelector('.loading-text').innerText = "Generating download link...";
-        const unrestricted = await rdAPI('POST', 'unrestrict/link', { link: info.links[0] });
-
-        if (!unrestricted.download) {
-          throw new Error('Could not unrestrict download link.');
-        }
-
-        // 6. Redirect to direct CDN download
-        document.querySelector('.loading-text').innerText = "Download starting!";
-        document.querySelector('.loading-subtext').innerText = unrestricted.filename || name;
-
-        window.location.href = unrestricted.download;
-        setTimeout(() => overlay.classList.remove('active'), 3000);
-
-      } catch (e) {
-        document.querySelector('.loading-text').innerText = "RD Error";
-        document.querySelector('.loading-subtext').innerText = e.message;
-        setTimeout(() => overlay.classList.remove('active'), 5000);
-      }
-    }
-
-    // ── WebTorrent fallback (no RD token) ──
-    async function downloadWithWebTorrent(encodedMagnet, name) {
-      overlay.classList.add('active');
-      document.querySelector('.loading-text').innerText = "Connecting to swarm...";
-      document.querySelector('.loading-subtext').innerText = "Finding peers (up to 45s for less-popular titles).";
-
-      let dotCount = 0;
-      const tick = setInterval(() => {
-        dotCount = (dotCount + 1) % 4;
-        document.querySelector('.loading-text').innerText = "Connecting to swarm" + ".".repeat(dotCount);
-      }, 500);
-
-      try {
-        const metaRes = await fetch('/api/metadata?magnet=' + encodedMagnet);
-        const metaData = await metaRes.json();
-        clearInterval(tick);
-
-        if (!metaRes.ok) throw new Error(metaData.error || "Could not fetch torrent metadata.");
-        if (!metaData.files || metaData.files.length === 0) throw new Error("Could not parse torrent contents.");
-
-        const largestFile = metaData.files.reduce((a, b) => a.sizeBytes > b.sizeBytes ? a : b);
-
-        document.querySelector('.loading-text').innerText = "Download Starting...";
-        document.querySelector('.loading-subtext').innerText = `${largestFile.name} (${metaData.peers || 0} peers)`;
-
-        window.location.href = `/api/download?magnet=${encodedMagnet}&fileIndex=${largestFile.index}`;
-        setTimeout(() => overlay.classList.remove('active'), 3000);
-      } catch (e) {
-        clearInterval(tick);
-        document.querySelector('.loading-text').innerText = "Error";
-        document.querySelector('.loading-subtext').innerText = e.message + " — try a torrent with more seeders.";
-        setTimeout(() => overlay.classList.remove('active'), 5000);
-      }
-    }
-
-    btn.addEventListener('click', executeSearch);
     input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') executeSearch();
+      if (e.key === 'Enter') {
+        const q = input.value.trim();
+        if (q) navigateToSearch(q, activeCategory);
+      }
     });
+
+    // ═══════════════════════════════════════════
+    // CATALOG — filmstrip
+    // ═══════════════════════════════════════════
+    const catalogCache = {};
+    let expandedSlice = null;
+
+    function showSkeleton() {
+      catalogStrip.innerHTML = '';
+      catalogStrip.className = 'filmstrip-skeleton';
+      for (let i = 0; i < 18; i++) {
+        const sk = document.createElement('div');
+        sk.className = 'skeleton-slice';
+        catalogStrip.appendChild(sk);
+      }
+    }
+
+    async function loadCatalog(key) {
+      if (catalogCache[key]) { renderFilmstrip(catalogCache[key]); return; }
+      showSkeleton();
+      try {
+        const [type, catalogId] = key.split('-');
+        const res = await fetch(`/api/catalog/${type}/${catalogId}`);
+        const data = await res.json();
+        catalogCache[key] = data.metas || [];
+        renderFilmstrip(catalogCache[key]);
+      } catch {
+        catalogStrip.innerHTML = '<div style="color:var(--text-muted);padding:3rem;font-size:0.75rem;letter-spacing:0.06em;text-transform:uppercase">Could not load catalog</div>';
+        catalogStrip.className = 'filmstrip';
+      }
+    }
+
+    function renderFilmstrip(metas) {
+      catalogStrip.innerHTML = '';
+      catalogStrip.className = 'filmstrip';
+      expandedSlice = null;
+
+      metas.forEach((m, idx) => {
+        const slice = document.createElement('div');
+        slice.className = 'film-slice';
+        if (idx === 0) slice.classList.add('expanded');
+
+        const bgImg = m.background || m.logo || m.poster || '';
+        const posterImg = m.poster || '';
+        const rating = m.imdbRating ? `<span class="film-slice-rating">${m.imdbRating}</span>` : '';
+        const typeLabel = m.type === 'series' ? 'Series' : 'Movie';
+
+        slice.innerHTML = `
+          <span class="film-slice-num">${String(idx + 1).padStart(2, '0')}</span>
+          <img class="film-slice-img" src="${bgImg}" alt="${m.name}" loading="lazy" draggable="false"
+               onerror="this.src='${posterImg}'; this.onerror=null;">
+          <div class="film-slice-info">
+            <div class="film-slice-title">${m.name}</div>
+            <div class="film-slice-meta">${typeLabel} &middot; ${m.year || ''}${rating}</div>
+            <div class="film-slice-explore" data-idx="${idx}">Explore</div>
+          </div>
+        `;
+
+        slice.addEventListener('click', (e) => {
+          if (catalogStrip._dragMoved && catalogStrip._dragMoved()) return;
+
+          if (e.target.classList.contains('film-slice-explore') || slice.classList.contains('expanded')) {
+            const cat = m.type === 'series' ? 'series' : 'movie';
+            navigateToSearch(m.name, cat);
+            return;
+          }
+
+          if (expandedSlice) expandedSlice.classList.remove('expanded');
+          slice.classList.add('expanded');
+          expandedSlice = slice;
+          slice.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+        });
+
+        if (idx === 0) expandedSlice = slice;
+        catalogStrip.appendChild(slice);
+      });
+
+      enableDragScroll(catalogStrip);
+    }
+
+    document.querySelectorAll('.catalog-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.catalog-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        loadCatalog(tab.dataset.catalog);
+      });
+    });
+
+    enableDragScroll(catalogStrip);
+    loadCatalog('movie-year');
   </script>
 </body>
 </html>
