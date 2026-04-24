@@ -239,7 +239,7 @@ function openPlayer(url, title, directUrl) {
   activeOpenSubId = null;
   openSubResults = [];
   loadedSubCues = [];
-  playerSubsBtn.style.display = 'none';
+  playerSubsBtn.style.display = '';  // Always show CC — menu handles "no subs" state
   playerSubsMenu.classList.remove('open');
   playerSubsBtn.classList.remove('active-subs');
   spriteData = null;
@@ -449,10 +449,23 @@ document.getElementById('playerFullscreen').addEventListener('click', (e) => {
 
 playerVideo.addEventListener('timeupdate', () => {
   const vidDur = playerVideo.duration;
-  const totalDur = streamDuration > 0 ? streamDuration : (isFinite(vidDur) && vidDur > 0 ? vidDur : 0);
-  if (!totalDur) return;
+  // Use streamDuration from ffprobe, fallback to video element duration
+  // For FFmpeg streams, video.duration is unreliable (reports fragment length, not total)
+  let totalDur = streamDuration > 0 ? streamDuration : (isFinite(vidDur) && vidDur > 0 ? vidDur : 0);
+  // If FFmpeg stream and no ffprobe duration, update streamDuration when video reports something useful
+  if (isFFmpegStream && streamDuration === 0 && isFinite(vidDur) && vidDur > 60) {
+    streamDuration = vidDur;
+    totalDur = vidDur;
+  }
   const actualTime = streamSeekOffset + playerVideo.currentTime;
-  const pct = (actualTime / totalDur) * 100;
+  // Auto-grow duration if video plays past reported duration
+  if (actualTime > totalDur && totalDur > 0) totalDur = actualTime + 30;
+  if (!totalDur) {
+    // No duration known — just show time without progress
+    playerTime.textContent = fmtTime(actualTime);
+    return;
+  }
+  const pct = Math.min((actualTime / totalDur) * 100, 100);
   playerProgressFill.style.width = pct + '%';
   playerTime.textContent = `${fmtTime(actualTime)} / ${fmtTime(totalDur)}`;
 
@@ -466,7 +479,7 @@ playerVideo.addEventListener('timeupdate', () => {
   if (playerVideo.buffered.length > 0) {
     const bufferedEnd = playerVideo.buffered.end(playerVideo.buffered.length - 1);
     const bufferedActual = streamSeekOffset + bufferedEnd;
-    const bufPct = (bufferedActual / totalDur) * 100;
+    const bufPct = Math.min((bufferedActual / totalDur) * 100, 100);
     bufferEl.style.width = bufPct + '%';
   }
 
@@ -622,9 +635,17 @@ function resolveEpisode(title) {
 }
 
 function searchOpenSubs(title, autoLoad) {
-  // Need IMDB ID — check series context or editorial detail
-  const imdbId = window._seriesCtx?.imdbId || window._currentImdbId || '';
-  if (!imdbId) return;
+  // Try IMDB ID from series context, detail view, or page URL
+  let imdbId = window._seriesCtx?.imdbId || window._currentImdbId || '';
+  if (!imdbId) {
+    // Try extracting from page URL (e.g. /detail/series/tt0388629)
+    const urlMatch = window.location.pathname.match(/\/(tt\d+)/);
+    if (urlMatch) imdbId = urlMatch[1];
+  }
+  if (!imdbId) {
+    console.log('[subs] No IMDB ID available for subtitle search');
+    return;
+  }
   const type = window._currentType || (window._seriesCtx ? 'series' : 'movie');
 
   // Dynamic episode extraction from torrent name
@@ -837,6 +858,15 @@ playerSubsBtn.addEventListener('click', (e) => {
       });
       playerSubsMenu.appendChild(btn);
     });
+
+    // No subs at all — show message
+    if (availableSubs.length === 0 && openSubResults.length === 0) {
+      const noSubs = document.createElement('div');
+      noSubs.className = 'player-subs-label';
+      noSubs.style.cssText = 'padding:12px 14px;color:var(--text-muted)';
+      noSubs.textContent = 'No subtitles found';
+      playerSubsMenu.appendChild(noSubs);
+    }
   }
 });
 
