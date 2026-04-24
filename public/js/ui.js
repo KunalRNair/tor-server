@@ -450,7 +450,7 @@ document.getElementById('playerFullscreen').addEventListener('click', (e) => {
 playerVideo.addEventListener('timeupdate', () => {
   const vidDur = playerVideo.duration;
   // For FFmpeg streams, video.duration reports fragment length (useless)
-  // Only trust streamDuration from ffprobe, otherwise just show elapsed
+  // Only trust streamDuration from ffprobe
   let totalDur;
   if (isFFmpegStream) {
     totalDur = streamDuration > 0 ? streamDuration : 0;
@@ -459,11 +459,13 @@ playerVideo.addEventListener('timeupdate', () => {
   }
   const actualTime = streamSeekOffset + playerVideo.currentTime;
   if (!totalDur) {
-    // No duration known — show elapsed time only, hide progress
+    // No duration from ffprobe — show elapsed time, thin progress line
     playerTime.textContent = fmtTime(actualTime);
-    playerProgressFill.style.width = '0%';
+    playerProgressFill.style.width = '100%';
+    playerProgressFill.style.opacity = '0.3';
     return;
   }
+  playerProgressFill.style.opacity = '1';
   const pct = Math.min((actualTime / totalDur) * 100, 100);
   playerProgressFill.style.width = pct + '%';
   playerTime.textContent = `${fmtTime(actualTime)} / ${fmtTime(totalDur)}`;
@@ -629,15 +631,24 @@ function resolveEpisode(title) {
     // For anime where season=1 but parsed episode might span seasons, search by episode number
     const byEp = ctx.episodes.find(e => e.episode === parsed.episode);
     if (byEp) return { season: byEp.season, episode: byEp.episode };
+    // Anime absolute episode → map by index in full episode list
+    // e.g. One Piece ep 1156 = 1156th episode overall → find its season:episode
+    if (parsed.episode > 0) {
+      const idx = parsed.episode - 1;
+      if (idx < ctx.episodes.length) {
+        const ep = ctx.episodes[idx];
+        console.log(`[subs] Absolute ep ${parsed.episode} → S${ep.season}E${ep.episode} (by index)`);
+        return { season: ep.season, episode: ep.episode };
+      }
+    }
   }
   return parsed;
 }
 
-function searchOpenSubs(title, autoLoad) {
+async function searchOpenSubs(title, autoLoad) {
   // Try IMDB ID from series context, detail view, or page URL
   let imdbId = window._seriesCtx?.imdbId || window._currentImdbId || '';
   if (!imdbId) {
-    // Try extracting from page URL (e.g. /detail/series/tt0388629)
     const urlMatch = window.location.pathname.match(/\/(tt\d+)/);
     if (urlMatch) imdbId = urlMatch[1];
   }
@@ -646,6 +657,20 @@ function searchOpenSubs(title, autoLoad) {
     return;
   }
   const type = window._currentType || (window._seriesCtx ? 'series' : 'movie');
+
+  // For series without context loaded, try to load episode list from Cinemeta
+  if (type === 'series' && !window._seriesCtx && imdbId) {
+    try {
+      const metaRes = await fetch(`https://v3-cinemeta.strem.io/meta/series/${imdbId}.json`).then(r => r.json());
+      if (metaRes?.meta?.videos) {
+        const allEps = metaRes.meta.videos.filter(v => v.season && v.episode)
+          .sort((a,b) => a.season - b.season || a.episode - b.episode)
+          .map(v => ({ season: v.season, episode: v.episode, name: v.name || '' }));
+        window._seriesCtx = { imdbId, episodes: allEps, title: metaRes.meta.name };
+        console.log(`[subs] Loaded series context: ${allEps.length} episodes`);
+      }
+    } catch {}
+  }
 
   // Dynamic episode extraction from torrent name
   let subUrl = `/api/subs/search?imdb=${encodeURIComponent(imdbId)}&type=${type}`;
