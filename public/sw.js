@@ -1,4 +1,4 @@
-const CACHE_NAME = 'turant-v7';
+const CACHE_NAME = 'turant-v8';
 const PRECACHE = [
   '/',
   '/css/style.css',

@@ -677,6 +677,13 @@ playerVideo.addEventListener('timeupdate', () => {
   const t = streamSeekOffset + playerVideo.currentTime;
   const cue = loadedSubCues.find(c => t >= c.start && t <= c.end);
   const ov = getSubOverlay();
+  // Debug: log every 5 seconds
+  if (!window._lastSubDebug || Date.now() - window._lastSubDebug > 5000) {
+    window._lastSubDebug = Date.now();
+    const firstCue = loadedSubCues[0];
+    const lastCue = loadedSubCues[loadedSubCues.length - 1];
+    console.log(`[subs] t=${t.toFixed(1)} offset=${streamSeekOffset} videoTime=${playerVideo.currentTime.toFixed(1)} cues=${loadedSubCues.length} range=${firstCue?.start.toFixed(1)}-${lastCue?.end.toFixed(1)} match=${!!cue}`);
+  }
   if (cue) {
     ov.textContent = cue.text;
     ov.style.display = '';
