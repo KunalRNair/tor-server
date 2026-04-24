@@ -349,10 +349,9 @@ async function startServer() {
           '-frag_duration', '1000000',
           '-f', 'mp4',
           ...(fullTranscode
-            ? ['-c:v', 'libx264',  '-preset', 'ultrafast', '-crf', '28',
-               '-vf', 'scale=-2:480']
+            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
             : ['-c:v', 'copy']),
-          '-c:a', 'aac', '-b:a', '128k',
+          '-c:a', 'aac', '-b:a', '192k',
           '-af', 'aresample=async=1:first_pts=0',
           '-fflags', '+genpts+discardcorrupt',
           '-avoid_negative_ts', 'make_zero',

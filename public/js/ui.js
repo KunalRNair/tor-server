@@ -449,20 +449,19 @@ document.getElementById('playerFullscreen').addEventListener('click', (e) => {
 
 playerVideo.addEventListener('timeupdate', () => {
   const vidDur = playerVideo.duration;
-  // Use streamDuration from ffprobe, fallback to video element duration
-  // For FFmpeg streams, video.duration is unreliable (reports fragment length, not total)
-  let totalDur = streamDuration > 0 ? streamDuration : (isFinite(vidDur) && vidDur > 0 ? vidDur : 0);
-  // If FFmpeg stream and no ffprobe duration, update streamDuration when video reports something useful
-  if (isFFmpegStream && streamDuration === 0 && isFinite(vidDur) && vidDur > 60) {
-    streamDuration = vidDur;
-    totalDur = vidDur;
+  // For FFmpeg streams, video.duration reports fragment length (useless)
+  // Only trust streamDuration from ffprobe, otherwise just show elapsed
+  let totalDur;
+  if (isFFmpegStream) {
+    totalDur = streamDuration > 0 ? streamDuration : 0;
+  } else {
+    totalDur = streamDuration > 0 ? streamDuration : (isFinite(vidDur) && vidDur > 0 ? vidDur : 0);
   }
   const actualTime = streamSeekOffset + playerVideo.currentTime;
-  // Auto-grow duration if video plays past reported duration
-  if (actualTime > totalDur && totalDur > 0) totalDur = actualTime + 30;
   if (!totalDur) {
-    // No duration known — just show time without progress
+    // No duration known — show elapsed time only, hide progress
     playerTime.textContent = fmtTime(actualTime);
+    playerProgressFill.style.width = '0%';
     return;
   }
   const pct = Math.min((actualTime / totalDur) * 100, 100);
@@ -667,12 +666,11 @@ async function fetchSubsAndLoad(subUrl, imdbId, type, autoLoad) {
   let res = await fetch(subUrl);
   let subs = await res.json();
 
-  // If episode-specific search returned nothing, retry without episode
+  // If episode-specific search returned nothing, DON'T fallback to series-level
+  // Series-level returns random episode subs which is worse than no subs
   if ((!Array.isArray(subs) || subs.length === 0) && subUrl.includes('&season=')) {
-    const baseUrl = `/api/subs/search?imdb=${encodeURIComponent(imdbId)}&type=${type}`;
-    console.log('[subs] No episode-specific subs, retrying series-level:', baseUrl);
-    res = await fetch(baseUrl);
-    subs = await res.json();
+    console.log('[subs] No subs found for this specific episode');
+    return;
   }
 
   if (!Array.isArray(subs) || subs.length === 0) {
