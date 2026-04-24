@@ -344,7 +344,7 @@ function openPlayer(url, title, directUrl) {
   }
 
   let playbackCheckTimer = null;
-  const LOTTIE_PLAYER = 'https://lottie.host/6411271b-d7df-41f5-bdfa-780c0e1e9276/fqD8TkeXOG.lottie';
+  const LOTTIE_PLAYER = 'https://lottie.host/77663e6b-da56-4d66-b10c-a2e3cd7b18c7/MqhgOZa9vu.lottie';
 
   function showPlayerLoader(msg) {
     const wrap = document.getElementById('playerVideoWrap');
@@ -356,7 +356,7 @@ function openPlayer(url, title, directUrl) {
       wrap.appendChild(loaderEl);
     }
     loaderEl.innerHTML = `
-      <dotlottie-wc src="${LOTTIE_PLAYER}" autoplay loop style="width:120px;height:120px"></dotlottie-wc>
+      <dotlottie-wc src="${LOTTIE_PLAYER}" autoplay loop style="width:200px;height:200px"></dotlottie-wc>
       <div class="player-loading-text">${msg || 'Loading...'}</div>
     `;
   }
