@@ -545,13 +545,14 @@ async function startServer() {
       ...(startSec > 0 ? ['-ss', String(startSec)] : []),
       '-i', url,
       '-f', 'hls',
-      '-hls_time', '4',
+      '-hls_time', '2',
       '-hls_list_size', '0',
       '-hls_flags', 'delete_segments+append_list+independent_segments',
       '-hls_segment_type', 'mpegts',
       '-hls_segment_filename', path.join(dir, 'seg%03d.ts'),
       ...(fullTranscode
-        ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-profile:v', 'baseline', '-level', '4.0', '-pix_fmt', 'yuv420p']
+        ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-profile:v', 'baseline', '-level', '3.1', '-pix_fmt', 'yuv420p',
+           '-vf', 'scale=-2:480', '-g', '48', '-keyint_min', '48']
         : ['-c:v', 'copy']),
       '-c:a', 'aac', '-b:a', '128k',
       '-fflags', '+genpts+discardcorrupt',
@@ -573,7 +574,7 @@ async function startServer() {
       if (code !== 0) console.error('[hls] stderr:', stderrBuf.slice(-300));
     });
 
-    // Wait for m3u8 to appear (max 30s)
+    // Wait for m3u8 to appear (max 90s — transcode on 1GB server is slow)
     const m3u8Path = path.join(dir, 'stream.m3u8');
     let waited = 0;
     const poll = setInterval(() => {
@@ -581,7 +582,7 @@ async function startServer() {
       if (fs.existsSync(m3u8Path) && fs.statSync(m3u8Path).size > 0) {
         clearInterval(poll);
         res.json({ session: sid, m3u8: `/api/stream/hls/${sid}/stream.m3u8` });
-      } else if (waited >= 30000 || ff.killed || ff.exitCode !== null) {
+      } else if (waited >= 90000 || ff.killed || ff.exitCode !== null) {
         clearInterval(poll);
         cleanupHls(sid);
         res.status(502).json({ error: 'HLS stream failed to start' });

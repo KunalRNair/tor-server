@@ -376,9 +376,10 @@ function openPlayer(url, title, directUrl) {
   const needsHls = isSafari && url.includes('/api/stream?url=') && (directUrl || '').toLowerCase().includes('.mkv');
 
   if (needsHls) {
-    console.log('[player] Safari detected + MKV — using HLS path');
+    console.log('[player] Safari detected + MKV — using HLS transcode path');
     showPlayerLoader('Preparing stream for Safari...');
-    const hlsUrl = url.replace('/api/stream?', '/api/stream/hls?');
+    // Always transcode for Safari — MKV files are typically HEVC which Safari can't decode
+    const hlsUrl = url.replace('/api/stream?', '/api/stream/hls?') + '&transcode=1';
     window._activeHlsSession = null;
     fetch(hlsUrl)
       .then(r => r.json())
