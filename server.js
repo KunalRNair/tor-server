@@ -367,8 +367,8 @@ async function startServer() {
       activeFFmpeg++;
       try {
         res.setHeader('Content-Type', 'video/mp4');
-        res.setHeader('Transfer-Encoding', 'chunked');
-        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Accept-Ranges', 'none');
+        res.setHeader('Cache-Control', 'no-store');
 
         // transcode=1 → full re-encode (guaranteed sync, heavy CPU)
         // default → copy video + transcode audio to AAC (light CPU, compatible)
@@ -378,7 +378,7 @@ async function startServer() {
           '-probesize', '3000000',
           ...(startSec > 0 ? ['-ss', String(startSec)] : []),
           '-i', url,
-          '-movflags', 'frag_keyframe+empty_moov+faststart+default_base_moof',
+          '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
           '-frag_duration', '1000000',
           '-f', 'mp4',
           ...(fullTranscode
