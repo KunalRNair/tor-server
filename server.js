@@ -3,8 +3,26 @@ const os = require('os');
 const express = require('express');
 const { spawn } = require('child_process');
 
-// ── Server-side RD token ──
-let RD_TOKEN = 'EH55CYDSD2SVDT3ZRHUWDG3IGB4J3RQL6PFMJ3OF4L2WNEM5347Q';
+// ── Server-side RD token (env var with fallback) ──
+let RD_TOKEN = process.env.RD_TOKEN || '';
+
+// ── URL validation (SSRF prevention) ──
+function isValidStreamUrl(url) {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    // Block private/internal IPs
+    const host = u.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return false;
+    if (/^(10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(host)) return false;
+    if (host === '0.0.0.0' || host.endsWith('.local')) return false;
+    return true;
+  } catch { return false; }
+}
+
+// ── Concurrent FFmpeg limiter ──
+let activeFFmpeg = 0;
+const MAX_FFMPEG = 2;
 
 function getRdToken() { return RD_TOKEN; }
 
@@ -17,7 +35,7 @@ async function startServer() {
 
   const client = new WebTorrent({
     dht: false,
-    maxConns: 30,
+    maxConns: 10,
     tracker: true,
   });
   client.on('error', err => console.error('WebTorrent client error:', err.message || err));
@@ -74,8 +92,18 @@ async function startServer() {
   }
 
   const app = express();
+  // Gzip compression for all responses
+  try { const compression = require('compression'); app.use(compression()); } catch {}
   app.use(express.static(path.join(__dirname, 'public')));
   app.use(express.json());
+
+  // Simple in-memory cache for catalog/search (1hr TTL)
+  const apiCache = new Map();
+  function cachedFetch(key, fetchFn, ttlMs = 3600000) {
+    const cached = apiCache.get(key);
+    if (cached && Date.now() - cached.ts < ttlMs) return Promise.resolve(cached.data);
+    return fetchFn().then(data => { apiCache.set(key, { data, ts: Date.now() }); if (apiCache.size > 50) { const oldest = apiCache.keys().next().value; apiCache.delete(oldest); } return data; });
+  }
 
   // ======================================================================
   // Real-Debrid Token Management (server-side storage)
@@ -171,11 +199,14 @@ async function startServer() {
       return res.status(400).json({ error: 'Invalid catalog' });
     }
     try {
-      const cRes = await fetch(
-        `https://v3-cinemeta.strem.io/catalog/${type}/${catalogId}.json`,
-        { redirect: 'follow' }
-      );
-      const data = await cRes.json();
+      const cacheKey = `catalog:${type}:${catalogId}`;
+      const data = await cachedFetch(cacheKey, async () => {
+        const cRes = await fetch(
+          `https://v3-cinemeta.strem.io/catalog/${type}/${catalogId}.json`,
+          { redirect: 'follow' }
+        );
+        return cRes.json();
+      });
       res.json(data);
     } catch (e) {
       console.error('Catalog error:', e.message);
@@ -323,14 +354,17 @@ async function startServer() {
   app.get('/api/stream', async (req, res) => {
     const url = req.query.url;
     if (!url) return res.status(400).json({ error: 'Missing url' });
+    if (!isValidStreamUrl(url)) return res.status(403).json({ error: 'Invalid URL' });
     const urlLower = url.toLowerCase();
     const isMKV = urlLower.includes('.mkv');
     const forceTranscode = req.query.transcode === '1';
 
     // MKV or forced transcode → pipe through FFmpeg remux/transcode
     if (isMKV || forceTranscode) {
+      if (activeFFmpeg >= MAX_FFMPEG) return res.status(503).json({ error: 'Server busy — try again in a moment' });
       const startSec = parseFloat(req.query.start) || 0;
-      console.log('Stream+FFmpeg:', url.slice(0, 80) + '...', startSec ? `seek=${startSec}s` : '');
+      console.log(`Stream+FFmpeg [${activeFFmpeg + 1}/${MAX_FFMPEG}]:`, url.slice(0, 80) + '...', startSec ? `seek=${startSec}s` : '');
+      activeFFmpeg++;
       try {
         res.setHeader('Content-Type', 'video/mp4');
         res.setHeader('Transfer-Encoding', 'chunked');
@@ -366,6 +400,7 @@ async function startServer() {
         ff.stdout.pipe(res);
 
         ff.on('close', (code) => {
+          activeFFmpeg = Math.max(0, activeFFmpeg - 1);
           if (code !== 0 && !res.writableEnded) {
             console.error('FFmpeg exit code:', code, stderrBuf.slice(-300));
           }
@@ -376,6 +411,7 @@ async function startServer() {
           ff.kill('SIGKILL');
         });
       } catch (e) {
+        activeFFmpeg = Math.max(0, activeFFmpeg - 1);
         console.error('FFmpeg stream error:', e.message);
         if (!res.headersSent) res.status(502).json({ error: 'Stream failed: ' + e.message });
       }
@@ -438,6 +474,7 @@ async function startServer() {
   app.get('/api/stream/probe', async (req, res) => {
     const url = req.query.url;
     if (!url) return res.status(400).json({ error: 'Missing url' });
+    if (!isValidStreamUrl(url)) return res.status(403).json({ error: 'Invalid URL' });
     try {
       const ff = spawn('ffprobe', [
         '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams',
@@ -558,6 +595,7 @@ async function startServer() {
     const url = req.query.url;
     const track = parseInt(req.query.track) || 0;
     if (!url) return res.status(400).json({ error: 'Missing url' });
+    if (!isValidStreamUrl(url)) return res.status(403).json({ error: 'Invalid URL' });
     console.log(`[subs/extract] Track ${track} from ${url.slice(0, 60)}...`);
     try {
       res.setHeader('Access-Control-Allow-Origin', '*');

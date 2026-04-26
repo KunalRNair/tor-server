@@ -222,7 +222,43 @@ let nextEpInfo = null;         // { label, onPlay } — set by search.html when 
 let nextEpShown = false;       // true once the overlay is shown for this playback
 let nextEpCountdown = null;    // interval for countdown timer
 
+// Player session AbortController — cleans up per-session event listeners
+let playerSessionAC = null;
+
+// Playback resume — save position per title
+function savePlaybackPosition(title, time) {
+  if (!title || !time || time < 5) return;
+  try {
+    const store = JSON.parse(localStorage.getItem('turant_resume') || '{}');
+    store[title] = { time: Math.floor(time), ts: Date.now() };
+    // Keep max 50 entries
+    const keys = Object.keys(store);
+    if (keys.length > 50) { delete store[keys.sort((a,b) => store[a].ts - store[b].ts)[0]]; }
+    localStorage.setItem('turant_resume', JSON.stringify(store));
+  } catch {}
+}
+function getPlaybackPosition(title) {
+  if (!title) return 0;
+  try {
+    const store = JSON.parse(localStorage.getItem('turant_resume') || '{}');
+    const entry = store[title];
+    if (entry && Date.now() - entry.ts < 7 * 86400000) return entry.time; // 7 day expiry
+  } catch {}
+  return 0;
+}
+function clearPlaybackPosition(title) {
+  try {
+    const store = JSON.parse(localStorage.getItem('turant_resume') || '{}');
+    delete store[title];
+    localStorage.setItem('turant_resume', JSON.stringify(store));
+  } catch {}
+}
+
 function openPlayer(url, title, directUrl) {
+  // Clean up previous session's listeners
+  if (playerSessionAC) playerSessionAC.abort();
+  playerSessionAC = new AbortController();
+
   // Ensure playerVideo points to a live DOM element (may be stale after error recovery)
   const liveVid = document.getElementById('playerVideo');
   if (liveVid) playerVideo = liveVid;
@@ -423,22 +459,79 @@ function openPlayer(url, title, directUrl) {
   }, 45000);
   showTranscodeStatus('Preparing stream...');
 
+  // Session-scoped listeners — cleaned up via AbortController on close
+  const sig = playerSessionAC.signal;
   playerVideo.addEventListener('loadeddata', () => {
     clearTimeout(playbackCheckTimer);
     hidePlayerLoader();
-  });
+    // Resume from last position
+    const savedPos = getPlaybackPosition(title);
+    if (savedPos > 10 && !streamSeekOffset) {
+      if (isFFmpegStream) {
+        seekByOffset(savedPos);
+      } else {
+        playerVideo.currentTime = savedPos;
+      }
+      console.log(`[player] Resumed from ${fmtTime(savedPos)}`);
+    }
+  }, { signal: sig });
   playerVideo.addEventListener('playing', () => {
     clearTimeout(playbackCheckTimer);
     hidePlayerLoader();
     if (transcodeRetried) playerTitle.textContent = title || '';
-  });
+  }, { signal: sig });
   // Show loader during buffering/seeking
-  playerVideo.addEventListener('waiting', () => showPlayerLoader('Buffering...'));
-  playerVideo.addEventListener('canplay', () => hidePlayerLoader());
+  playerVideo.addEventListener('waiting', () => showPlayerLoader('Buffering...'), { signal: sig });
+  playerVideo.addEventListener('canplay', () => hidePlayerLoader(), { signal: sig });
+  // Save position periodically for resume
+  let lastSaveTime = 0;
+  playerVideo.addEventListener('timeupdate', () => {
+    const now = Date.now();
+    if (now - lastSaveTime > 10000) { // every 10s
+      lastSaveTime = now;
+      savePlaybackPosition(title, streamSeekOffset + playerVideo.currentTime);
+    }
+  }, { signal: sig });
+  // Clear saved position when video ends
+  playerVideo.addEventListener('ended', () => {
+    clearPlaybackPosition(title);
+  }, { signal: sig });
+
+  // ── Double-tap seek (mobile) ──
+  let lastTapTime = 0, lastTapX = 0;
+  const videoWrap = document.getElementById('playerVideoWrap');
+  videoWrap.addEventListener('touchend', (e) => {
+    if (e.target.closest('.player-loading-overlay') || e.target.closest('.next-ep-overlay')) return;
+    const now = Date.now();
+    const x = e.changedTouches[0]?.clientX || 0;
+    if (now - lastTapTime < 300 && Math.abs(x - lastTapX) < 50) {
+      e.preventDefault();
+      const rect = videoWrap.getBoundingClientRect();
+      const pct = (x - rect.left) / rect.width;
+      if (pct < 0.35) { seekByOffset(-10); showSeekIndicator('-10s', 'left'); }
+      else if (pct > 0.65) { seekByOffset(10); showSeekIndicator('+10s', 'right'); }
+      lastTapTime = 0;
+    } else {
+      lastTapTime = now;
+      lastTapX = x;
+    }
+  }, { signal: sig });
+
+  function showSeekIndicator(text, side) {
+    let ind = videoWrap.querySelector('.seek-indicator');
+    if (!ind) { ind = document.createElement('div'); ind.className = 'seek-indicator'; videoWrap.appendChild(ind); }
+    ind.textContent = text;
+    ind.style.left = side === 'left' ? '20%' : '80%';
+    ind.classList.add('visible');
+    setTimeout(() => ind.classList.remove('visible'), 600);
+  }
 }
 
 // Internal close — DOM cleanup only, no history manipulation
 function closePlayerInternal() {
+  // Abort all session-scoped event listeners
+  if (playerSessionAC) { playerSessionAC.abort(); playerSessionAC = null; }
+
   // Remove next-ep overlay
   const nextEpOv = document.getElementById('nextEpOverlay');
   if (nextEpOv) nextEpOv.remove();
@@ -522,6 +615,40 @@ document.getElementById('playerFullscreen').addEventListener('click', (e) => {
   if (document.fullscreenElement) document.exitFullscreen();
   else playerOverlay.requestFullscreen().catch(() => {});
 });
+
+// ═══════════════════════════════════════════
+// PLAYBACK SPEED CONTROL
+// ═══════════════════════════════════════════
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+let currentSpeedIdx = 2; // 1x default
+const speedBtn = document.getElementById('playerSpeedBtn');
+if (speedBtn) {
+  speedBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    currentSpeedIdx = (currentSpeedIdx + 1) % SPEEDS.length;
+    const speed = SPEEDS[currentSpeedIdx];
+    playerVideo.playbackRate = speed;
+    speedBtn.textContent = speed === 1 ? '1x' : speed + 'x';
+    speedBtn.classList.toggle('active-speed', speed !== 1);
+  });
+}
+
+// ═══════════════════════════════════════════
+// PICTURE-IN-PICTURE
+// ═══════════════════════════════════════════
+const pipBtn = document.getElementById('playerPipBtn');
+if (pipBtn) {
+  if (!document.pictureInPictureEnabled) { pipBtn.style.display = 'none'; }
+  else {
+    pipBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        if (document.pictureInPictureElement) await document.exitPictureInPicture();
+        else await playerVideo.requestPictureInPicture();
+      } catch {}
+    });
+  }
+}
 
 playerVideo.addEventListener('timeupdate', () => {
   const vidDur = playerVideo.duration;
@@ -856,7 +983,16 @@ playerVideo.addEventListener('timeupdate', () => {
     return;
   }
   const t = streamSeekOffset + playerVideo.currentTime;
-  const cue = loadedSubCues.find(c => t >= c.start && t <= c.end);
+  // Binary search for current cue (O(log n) instead of O(n))
+  let cue = null;
+  let lo = 0, hi = loadedSubCues.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const c = loadedSubCues[mid];
+    if (t < c.start) hi = mid - 1;
+    else if (t > c.end) lo = mid + 1;
+    else { cue = c; break; }
+  }
   const ov = getSubOverlay();
   // Debug: log every 5 seconds
   if (!window._lastSubDebug || Date.now() - window._lastSubDebug > 5000) {

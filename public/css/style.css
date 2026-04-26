@@ -1473,3 +1473,23 @@ body.detail-open .content { opacity: 0; pointer-events: none; }
   height: auto;
   min-height: 90px;
 }
+
+/* Double-tap seek indicator */
+.seek-indicator {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 700;
+  text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+  opacity: 0;
+  pointer-events: none;
+  z-index: 20;
+  transition: opacity 0.2s ease;
+}
+.seek-indicator.visible { opacity: 1; }
+
+/* Speed button active */
+#playerSpeedBtn.active-speed { color: #E8A263; border-color: #E8A263; }
+#playerSpeedBtn, #playerPipBtn { font-size: 0.7rem; font-weight: 600; letter-spacing: 0.02em; }
