@@ -24,7 +24,7 @@ function isValidStreamUrl(url) {
 
 // ── Concurrent FFmpeg limiter ──
 let activeFFmpeg = 0;
-const MAX_FFMPEG = 2;
+const MAX_FFMPEG = 3;
 
 function getRdToken() { return RD_TOKEN; }
 
@@ -516,11 +516,11 @@ async function startServer() {
     if (!s) return;
     if (s.ff && !s.ff.killed) s.ff.kill('SIGKILL');
     clearTimeout(s.timeout);
-    // Remove temp dir
     fs.rm(s.dir, { recursive: true, force: true }, () => {});
     hlsSessions.delete(sid);
-    activeFFmpeg = Math.max(0, activeFFmpeg - 1);
-    console.log(`[hls] Cleaned session ${sid}`);
+    // Only decrement if FFmpeg close handler hasn't already
+    if (!s._ffDone) activeFFmpeg = Math.max(0, activeFFmpeg - 1);
+    console.log(`[hls] Cleaned session ${sid} activeFFmpeg=${activeFFmpeg}`);
   }
 
   // Start HLS session — returns m3u8 URL
@@ -547,7 +547,7 @@ async function startServer() {
       '-f', 'hls',
       '-hls_time', '2',
       '-hls_list_size', '0',
-      '-hls_flags', 'delete_segments+append_list+independent_segments',
+      '-hls_flags', 'append_list+independent_segments',
       '-hls_segment_type', 'mpegts',
       '-hls_segment_filename', path.join(dir, 'seg%03d.ts'),
       ...(fullTranscode
@@ -567,11 +567,16 @@ async function startServer() {
 
     // Auto-cleanup after 2 hours
     const timeout = setTimeout(() => cleanupHls(sid), 2 * 60 * 60 * 1000);
-    hlsSessions.set(sid, { dir, ff, timeout });
+    const session = { dir, ff, timeout, _ffDone: false };
+    hlsSessions.set(sid, session);
 
     ff.on('close', (code) => {
-      console.log(`[hls] FFmpeg done for ${sid}: code=${code}`);
-      if (code !== 0) console.error('[hls] stderr:', stderrBuf.slice(-300));
+      // FFmpeg finished — free the slot immediately (don't wait for session cleanup)
+      activeFFmpeg = Math.max(0, activeFFmpeg - 1);
+      session._ffDone = true;
+      console.log(`[hls] FFmpeg done for ${sid}: code=${code} activeFFmpeg=${activeFFmpeg}`);
+      if (code !== 0) console.error('[hls] stderr:', stderrBuf.slice(-500));
+      else console.log('[hls] stderr tail:', stderrBuf.slice(-200));
     });
 
     // Wait for m3u8 to appear (max 90s — transcode on 1GB server is slow)
