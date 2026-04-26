@@ -378,11 +378,11 @@ async function startServer() {
           '-probesize', '3000000',
           ...(startSec > 0 ? ['-ss', String(startSec)] : []),
           '-i', url,
-          '-movflags', 'frag_keyframe+empty_moov+faststart',
+          '-movflags', 'frag_keyframe+empty_moov+faststart+default_base_moof',
           '-frag_duration', '1000000',
           '-f', 'mp4',
           ...(fullTranscode
-            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
+            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-profile:v', 'baseline', '-level', '4.0', '-pix_fmt', 'yuv420p']
             : ['-c:v', 'copy']),
           '-c:a', 'aac', '-b:a', '192k',
           '-fflags', '+genpts+discardcorrupt',
