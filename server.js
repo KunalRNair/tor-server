@@ -552,7 +552,7 @@ async function startServer() {
       '-hls_segment_filename', path.join(dir, 'seg%03d.ts'),
       ...(fullTranscode
         ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '28', '-profile:v', 'baseline', '-level', '3.1', '-pix_fmt', 'yuv420p',
-           '-vf', 'scale=-2:480', '-g', '48', '-keyint_min', '48']
+           '-vf', 'scale=trunc(oh*a/2)*2:480', '-g', '48', '-keyint_min', '48']
         : ['-c:v', 'copy']),
       '-c:a', 'aac', '-b:a', '128k',
       '-fflags', '+genpts+discardcorrupt',
@@ -561,9 +561,13 @@ async function startServer() {
       path.join(dir, 'stream.m3u8')
     ];
 
+    console.log(`[hls] FFmpeg args:`, ffArgs.join(' '));
     const ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
     let stderrBuf = '';
     ff.stderr.on('data', (d) => { stderrBuf += d.toString(); });
+    ff.on('error', (err) => {
+      console.error(`[hls] FFmpeg spawn error for ${sid}:`, err.message);
+    });
 
     // Auto-cleanup after 2 hours
     const timeout = setTimeout(() => cleanupHls(sid), 2 * 60 * 60 * 1000);
