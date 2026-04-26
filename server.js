@@ -379,12 +379,15 @@ async function startServer() {
           ...(startSec > 0 ? ['-ss', String(startSec)] : []),
           '-i', url,
           '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
-          '-frag_duration', '1000000',
+          '-frag_duration', '200000',
+          '-min_frag_duration', '0',
+          '-flush_packets', '1',
           '-f', 'mp4',
           ...(fullTranscode
-            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-profile:v', 'baseline', '-level', '4.0', '-pix_fmt', 'yuv420p']
+            ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-profile:v', 'baseline', '-level', '4.0', '-pix_fmt', 'yuv420p',
+               '-g', '15', '-keyint_min', '15']
             : ['-c:v', 'copy']),
-          '-c:a', 'aac', '-b:a', '192k',
+          '-c:a', 'aac', '-b:a', '128k',
           '-fflags', '+genpts+discardcorrupt',
           '-avoid_negative_ts', 'make_zero',
           '-async', '1',
@@ -394,13 +397,18 @@ async function startServer() {
 
         const ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
         let stderrBuf = '';
+        let bytesSent = 0;
 
         ff.stderr.on('data', (d) => { stderrBuf += d.toString(); });
 
-        ff.stdout.pipe(res);
+        ff.stdout.on('data', (chunk) => {
+          bytesSent += chunk.length;
+          if (!res.writableEnded) res.write(chunk);
+        });
 
         ff.on('close', (code) => {
           activeFFmpeg = Math.max(0, activeFFmpeg - 1);
+          console.log(`FFmpeg done: code=${code} bytesSent=${bytesSent} transcode=${fullTranscode}`);
           if (code !== 0 && !res.writableEnded) {
             console.error('FFmpeg exit code:', code, stderrBuf.slice(-300));
           }
@@ -408,6 +416,7 @@ async function startServer() {
         });
 
         req.on('close', () => {
+          console.log(`Client disconnected after ${bytesSent} bytes, transcode=${fullTranscode}`);
           ff.kill('SIGKILL');
         });
       } catch (e) {
