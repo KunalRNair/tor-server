@@ -348,7 +348,34 @@ function openPlayer(url, title, directUrl) {
     searchOpenSubs(title, false);
   }
 
-  playerVideo.src = url;
+  // Safari/iOS can't play fMP4 pipe — use HLS instead
+  const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+    (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome'));
+  const needsHls = isSafari && url.includes('/api/stream?url=') && (directUrl || '').toLowerCase().includes('.mkv');
+
+  if (needsHls) {
+    console.log('[player] Safari detected + MKV — using HLS path');
+    showPlayerLoader('Preparing stream for Safari...');
+    const hlsUrl = url.replace('/api/stream?', '/api/stream/hls?');
+    window._activeHlsSession = null;
+    fetch(hlsUrl)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        window._activeHlsSession = data.session;
+        console.log('[player] HLS session:', data.session, 'url:', data.m3u8);
+        playerVideo.src = data.m3u8;
+        playerVideo.play().catch(() => {});
+      })
+      .catch(err => {
+        console.error('[player] HLS start failed:', err);
+        // Fallback: try direct URL anyway
+        playerVideo.src = url;
+      });
+  } else {
+    playerVideo.src = url;
+  }
+
   playerOverlay.classList.add('open');
   document.body.style.overflow = 'hidden';
   playerPlayPause.innerHTML = '&#10074;&#10074;';
@@ -429,13 +456,34 @@ function openPlayer(url, title, directUrl) {
     // Proxy stream failed → retry with full transcode (re-encodes both A/V)
     if (!transcodeRetried && url.includes('/api/stream?url=')) {
       transcodeRetried = true;
-      console.log('[player] Retrying with transcode=1 (480p)');
-      playerTitle.textContent = (title || '') + ' (transcoding 480p...)';
-      showTranscodeStatus('Transcoding to 480p... this may take a moment');
-      const transcodeUrl = url + '&transcode=1';
-      playerVideo.src = transcodeUrl;
-      playerVideo.load();
-      playerVideo.play().catch(() => {});
+      console.log('[player] Retrying with transcode=1');
+      playerTitle.textContent = (title || '') + ' (transcoding...)';
+      showTranscodeStatus('Transcoding... this may take a moment');
+
+      // Safari → HLS transcode, Chrome → fMP4 transcode
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
+        (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome'));
+      if (isSafari) {
+        const hlsUrl = url.replace('/api/stream?', '/api/stream/hls?') + '&transcode=1';
+        fetch(hlsUrl)
+          .then(r => r.json())
+          .then(data => {
+            if (data.error) throw new Error(data.error);
+            window._activeHlsSession = data.session;
+            console.log('[player] HLS transcode session:', data.session);
+            playerVideo.src = data.m3u8;
+            playerVideo.play().catch(() => {});
+          })
+          .catch(err => {
+            console.error('[player] HLS transcode failed:', err);
+            showPlaybackError();
+          });
+      } else {
+        const transcodeUrl = url + '&transcode=1';
+        playerVideo.src = transcodeUrl;
+        playerVideo.load();
+        playerVideo.play().catch(() => {});
+      }
       clearTimeout(playbackCheckTimer);
       playbackCheckTimer = setTimeout(() => {
         if (playerVideo.readyState < 3 && playerVideo.currentTime === 0) showPlaybackError();
@@ -531,6 +579,12 @@ function openPlayer(url, title, directUrl) {
 function closePlayerInternal() {
   // Abort all session-scoped event listeners
   if (playerSessionAC) { playerSessionAC.abort(); playerSessionAC = null; }
+
+  // Cleanup HLS session on server
+  if (window._activeHlsSession) {
+    fetch(`/api/stream/hls/${window._activeHlsSession}`, { method: 'DELETE' }).catch(() => {});
+    window._activeHlsSession = null;
+  }
 
   // Remove next-ep overlay
   const nextEpOv = document.getElementById('nextEpOverlay');

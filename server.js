@@ -1,7 +1,9 @@
 const path = require('path');
+const fs = require('fs');
 const os = require('os');
 const express = require('express');
 const { spawn } = require('child_process');
+const crypto = require('crypto');
 
 // ── Server-side RD token (env var with fallback) ──
 let RD_TOKEN = process.env.RD_TOKEN || '';
@@ -501,6 +503,118 @@ async function startServer() {
       console.error('Stream proxy error:', e.message);
       if (!res.headersSent) res.status(502).json({ error: 'Stream failed: ' + e.message });
     }
+  });
+
+  // ======================================================================
+  // HLS stream — for Safari/iOS (native HLS support)
+  // ======================================================================
+  const hlsSessions = new Map(); // sessionId → { dir, ff, timeout }
+
+  // Cleanup HLS session
+  function cleanupHls(sid) {
+    const s = hlsSessions.get(sid);
+    if (!s) return;
+    if (s.ff && !s.ff.killed) s.ff.kill('SIGKILL');
+    clearTimeout(s.timeout);
+    // Remove temp dir
+    fs.rm(s.dir, { recursive: true, force: true }, () => {});
+    hlsSessions.delete(sid);
+    activeFFmpeg = Math.max(0, activeFFmpeg - 1);
+    console.log(`[hls] Cleaned session ${sid}`);
+  }
+
+  // Start HLS session — returns m3u8 URL
+  app.get('/api/stream/hls', async (req, res) => {
+    const url = req.query.url;
+    if (!url) return res.status(400).json({ error: 'Missing url' });
+    if (!isValidStreamUrl(url)) return res.status(403).json({ error: 'Invalid URL' });
+    if (activeFFmpeg >= MAX_FFMPEG) return res.status(503).json({ error: 'Server busy' });
+
+    const fullTranscode = req.query.transcode === '1';
+    const startSec = parseFloat(req.query.start) || 0;
+    const sid = crypto.randomBytes(8).toString('hex');
+    const dir = path.join(os.tmpdir(), `hls-${sid}`);
+    fs.mkdirSync(dir, { recursive: true });
+
+    activeFFmpeg++;
+    console.log(`[hls] Starting session ${sid}, transcode=${fullTranscode}`);
+
+    const ffArgs = [
+      '-analyzeduration', fullTranscode ? '500000' : '3000000',
+      '-probesize', fullTranscode ? '500000' : '3000000',
+      ...(startSec > 0 ? ['-ss', String(startSec)] : []),
+      '-i', url,
+      '-f', 'hls',
+      '-hls_time', '4',
+      '-hls_list_size', '0',
+      '-hls_flags', 'delete_segments+append_list+independent_segments',
+      '-hls_segment_type', 'mpegts',
+      '-hls_segment_filename', path.join(dir, 'seg%03d.ts'),
+      ...(fullTranscode
+        ? ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23', '-profile:v', 'baseline', '-level', '4.0', '-pix_fmt', 'yuv420p']
+        : ['-c:v', 'copy']),
+      '-c:a', 'aac', '-b:a', '128k',
+      '-fflags', '+genpts+discardcorrupt',
+      '-avoid_negative_ts', 'make_zero',
+      '-map', '0:v:0', '-map', '0:a:0',
+      path.join(dir, 'stream.m3u8')
+    ];
+
+    const ff = spawn('ffmpeg', ffArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderrBuf = '';
+    ff.stderr.on('data', (d) => { stderrBuf += d.toString(); });
+
+    // Auto-cleanup after 2 hours
+    const timeout = setTimeout(() => cleanupHls(sid), 2 * 60 * 60 * 1000);
+    hlsSessions.set(sid, { dir, ff, timeout });
+
+    ff.on('close', (code) => {
+      console.log(`[hls] FFmpeg done for ${sid}: code=${code}`);
+      if (code !== 0) console.error('[hls] stderr:', stderrBuf.slice(-300));
+    });
+
+    // Wait for m3u8 to appear (max 30s)
+    const m3u8Path = path.join(dir, 'stream.m3u8');
+    let waited = 0;
+    const poll = setInterval(() => {
+      waited += 500;
+      if (fs.existsSync(m3u8Path) && fs.statSync(m3u8Path).size > 0) {
+        clearInterval(poll);
+        res.json({ session: sid, m3u8: `/api/stream/hls/${sid}/stream.m3u8` });
+      } else if (waited >= 30000 || ff.killed || ff.exitCode !== null) {
+        clearInterval(poll);
+        cleanupHls(sid);
+        res.status(502).json({ error: 'HLS stream failed to start' });
+      }
+    }, 500);
+  });
+
+  // Serve HLS files (m3u8 + ts segments)
+  app.get('/api/stream/hls/:sid/:file', (req, res) => {
+    const s = hlsSessions.get(req.params.sid);
+    if (!s) return res.status(404).json({ error: 'Session expired' });
+    const file = path.basename(req.params.file); // prevent traversal
+    const filePath = path.join(s.dir, file);
+    if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Segment not found' });
+
+    // Reset cleanup timer on activity
+    clearTimeout(s.timeout);
+    s.timeout = setTimeout(() => cleanupHls(req.params.sid), 2 * 60 * 60 * 1000);
+
+    if (file.endsWith('.m3u8')) {
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (file.endsWith('.ts')) {
+      res.setHeader('Content-Type', 'video/MP2T');
+      res.setHeader('Cache-Control', 'max-age=3600');
+    }
+    fs.createReadStream(filePath).pipe(res);
+  });
+
+  // Stop HLS session
+  app.delete('/api/stream/hls/:sid', (req, res) => {
+    cleanupHls(req.params.sid);
+    res.json({ ok: true });
   });
 
   // ======================================================================
