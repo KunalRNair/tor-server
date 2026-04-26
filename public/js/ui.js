@@ -173,7 +173,7 @@ function enableDragScroll(el) {
 // VIDEO PLAYER — minimal custom controls
 // ═══════════════════════════════════════════
 const playerOverlay = document.getElementById('playerOverlay');
-const playerVideo = document.getElementById('playerVideo');
+let playerVideo = document.getElementById('playerVideo');
 const playerTitle = document.getElementById('playerTitle');
 const playerProgress = document.getElementById('playerProgress');
 const playerProgressFill = document.getElementById('playerProgressFill');
@@ -223,6 +223,10 @@ let nextEpShown = false;       // true once the overlay is shown for this playba
 let nextEpCountdown = null;    // interval for countdown timer
 
 function openPlayer(url, title, directUrl) {
+  // Ensure playerVideo points to a live DOM element (may be stale after error recovery)
+  const liveVid = document.getElementById('playerVideo');
+  if (liveVid) playerVideo = liveVid;
+
   playerTitle.textContent = title || '';
   currentStreamDirectUrl = directUrl || '';
   currentStreamBaseUrl = url;
@@ -348,6 +352,7 @@ function openPlayer(url, title, directUrl) {
       document.getElementById('retryTranscode').addEventListener('click', () => {
         wrap.innerHTML = '<video id="playerVideo" autoplay playsinline></video>';
         const vid = wrap.querySelector('video');
+        playerVideo = vid;  // update global reference
         vid.src = transcodeUrl;
         showPlayerLoader('Re-encoding for compatibility...');
         vid.addEventListener('error', () => { hidePlayerLoader(); sessionStorage.removeItem('turant_stream'); wrap.innerHTML = '<div style="text-align:center;color:#888;padding:2rem"><div style="font-size:0.85rem">Transcode failed</div><div style="margin-top:12px"><a href="' + detailUrl + '" style="color:#E8A263;text-decoration:underline">GO BACK</a></div></div>'; }, { once: true });
@@ -451,6 +456,7 @@ function closePlayerInternal() {
     wrap.innerHTML = '<video id="playerVideo" autoplay playsinline></video>';
   }
   const vid = wrap.querySelector('video');
+  playerVideo = vid;  // update stale reference after element was recreated
   vid.pause();
   vid.removeAttribute('src');
   vid.load();
