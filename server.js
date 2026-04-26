@@ -373,9 +373,12 @@ async function startServer() {
         // transcode=1 → full re-encode (guaranteed sync, heavy CPU)
         // default → copy video + transcode audio to AAC (light CPU, compatible)
         const fullTranscode = forceTranscode || req.query.transcode === '1';
+        // Transcode path: reduce analysis (re-encoding anyway, don't waste time probing)
+        const analyzeDur = fullTranscode ? '500000' : '3000000';
+        const probeSz    = fullTranscode ? '500000' : '3000000';
         const ffArgs = [
-          '-analyzeduration', '3000000',
-          '-probesize', '3000000',
+          '-analyzeduration', analyzeDur,
+          '-probesize', probeSz,
           ...(startSec > 0 ? ['-ss', String(startSec)] : []),
           '-i', url,
           '-movflags', 'frag_keyframe+empty_moov+default_base_moof',
@@ -399,16 +402,39 @@ async function startServer() {
         let stderrBuf = '';
         let bytesSent = 0;
 
+        // Buffer initial output so Safari gets moov + first media fragment together
+        // (Safari rejects empty moov without media data)
+        const initBuf = [];
+        let initSize = 0;
+        let initFlushed = false;
+        const INIT_THRESHOLD = 32768; // 32KB — moov (~2KB) + first fragment(s)
+
         ff.stderr.on('data', (d) => { stderrBuf += d.toString(); });
 
         ff.stdout.on('data', (chunk) => {
           bytesSent += chunk.length;
-          if (!res.writableEnded) res.write(chunk);
+          if (res.writableEnded) return;
+          if (!initFlushed) {
+            initBuf.push(chunk);
+            initSize += chunk.length;
+            if (initSize >= INIT_THRESHOLD) {
+              initFlushed = true;
+              for (const b of initBuf) res.write(b);
+              initBuf.length = 0;
+            }
+          } else {
+            res.write(chunk);
+          }
         });
 
         ff.on('close', (code) => {
           activeFFmpeg = Math.max(0, activeFFmpeg - 1);
-          console.log(`FFmpeg done: code=${code} bytesSent=${bytesSent} transcode=${fullTranscode}`);
+          // Flush any remaining buffered init data
+          if (!initFlushed && initBuf.length > 0 && !res.writableEnded) {
+            for (const b of initBuf) res.write(b);
+            initBuf.length = 0;
+          }
+          console.log(`FFmpeg done: code=${code} bytesSent=${bytesSent} initFlushed=${initFlushed} transcode=${fullTranscode}`);
           if (code !== 0 && !res.writableEnded) {
             console.error('FFmpeg exit code:', code, stderrBuf.slice(-300));
           }
