@@ -348,6 +348,28 @@ function openPlayer(url, title, directUrl) {
     searchOpenSubs(title, false);
   }
 
+  const LOTTIE_PLAYER = 'https://lottie.host/77663e6b-da56-4d66-b10c-a2e3cd7b18c7/MqhgOZa9vu.lottie';
+
+  function showPlayerLoader(msg) {
+    const wrap = document.getElementById('playerVideoWrap');
+    let loaderEl = wrap.querySelector('.player-loading-overlay');
+    if (!loaderEl) {
+      loaderEl = document.createElement('div');
+      loaderEl.className = 'player-loading-overlay';
+      wrap.style.position = 'relative';
+      wrap.appendChild(loaderEl);
+    }
+    loaderEl.innerHTML = `
+      <dotlottie-wc src="${LOTTIE_PLAYER}" autoplay loop style="width:200px;height:200px"></dotlottie-wc>
+      <div class="player-loading-text">${msg || 'Loading...'}</div>
+    `;
+  }
+
+  function hidePlayerLoader() {
+    const el = document.getElementById('playerVideoWrap')?.querySelector('.player-loading-overlay');
+    if (el) el.remove();
+  }
+
   // Safari/iOS can't play fMP4 pipe — use HLS instead
   const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent) ||
     (navigator.userAgent.includes('AppleWebKit') && !navigator.userAgent.includes('Chrome'));
@@ -425,27 +447,6 @@ function openPlayer(url, title, directUrl) {
   }
 
   let playbackCheckTimer = null;
-  const LOTTIE_PLAYER = 'https://lottie.host/77663e6b-da56-4d66-b10c-a2e3cd7b18c7/MqhgOZa9vu.lottie';
-
-  function showPlayerLoader(msg) {
-    const wrap = document.getElementById('playerVideoWrap');
-    let loaderEl = wrap.querySelector('.player-loading-overlay');
-    if (!loaderEl) {
-      loaderEl = document.createElement('div');
-      loaderEl.className = 'player-loading-overlay';
-      wrap.style.position = 'relative';
-      wrap.appendChild(loaderEl);
-    }
-    loaderEl.innerHTML = `
-      <dotlottie-wc src="${LOTTIE_PLAYER}" autoplay loop style="width:200px;height:200px"></dotlottie-wc>
-      <div class="player-loading-text">${msg || 'Loading...'}</div>
-    `;
-  }
-
-  function hidePlayerLoader() {
-    const el = document.getElementById('playerVideoWrap')?.querySelector('.player-loading-overlay');
-    if (el) el.remove();
-  }
 
   // Compat aliases
   function showTranscodeStatus(msg) { showPlayerLoader(msg); }
